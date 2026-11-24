@@ -15,6 +15,7 @@ jobs:
   build:
     outputs:
       revision: ${{ steps.snapshot.outputs.revision }}
+      pages_artifact: ${{ steps.snapshot.outputs.pages_artifact }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     permissions:
@@ -47,6 +48,7 @@ jobs:
           IDSS_WSSI_CACHE_DIR: ${{ runner.temp }}/idss-wssi
         run: |
           python3 scripts/publish.py
+          echo "pages_artifact=idss-pages-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
           python3 -c 'import json; print("revision=" + json.load(open("_site/data/board.json"))["revision"])' >> "$GITHUB_OUTPUT"
           if [[ -f "$IDSS_WSSI_CACHE_DIR/confirmed-key" ]]; then
             echo "wssi_key=idss-wssi-native-v1-$(cat "$IDSS_WSSI_CACHE_DIR/confirmed-key")" >> "$GITHUB_OUTPUT"
@@ -63,6 +65,7 @@ jobs:
         run: python3 scripts/publish_current.py
       - uses: actions/upload-pages-artifact@v4
         with:
+          name: ${{ steps.snapshot.outputs.pages_artifact }}
           path: _site
   deploy:
     needs: build
@@ -87,6 +90,8 @@ jobs:
       - name: Publish the complete release
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: ${{ needs.build.outputs.pages_artifact }}
       - name: Verify the live briefing
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
@@ -100,7 +105,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: github.event_name != 'schedule' && always()
         with:
-          name: command-center-browser-check
+          name: command-center-browser-check-${{ github.run_attempt }}
           path: browser-check/*.png
           retention-days: 3
           if-no-files-found: ignore
