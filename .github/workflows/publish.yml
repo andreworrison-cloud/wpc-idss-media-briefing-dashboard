@@ -18,6 +18,8 @@ concurrency:
 
 jobs:
   build:
+    outputs:
+      revision: ${{ steps.snapshot.outputs.revision }}
     runs-on: ubuntu-latest
     timeout-minutes: 7
     permissions:
@@ -29,7 +31,10 @@ jobs:
       - name: Test publication checks
         run: python3 -m unittest discover -s tests
       - name: Build the reviewed briefing
-        run: python3 scripts/publish.py
+        id: snapshot
+        run: |
+          python3 scripts/publish.py
+          python3 -c 'import json; print("revision=" + json.load(open("_site/data/board.json"))["revision"])' >> "$GITHUB_OUTPUT"
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
@@ -38,12 +43,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 7
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - name: Publish the complete release
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Check the Pages publishing source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if mode=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq '.build_type'); then
+            echo "GitHub Pages publishing mode is $mode"
+            if [[ "$mode" == "legacy" ]]; then
+              echo "::warning::Select GitHub Actions as the Pages source. Branch publishing can replace the dashboard with a second build."
+            fi
+          fi
+      - name: Verify the live briefing
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          REVISION: ${{ needs.build.outputs.revision }}
+        run: python3 -m scripts.verify_pages "$PAGE_URL" "$REVISION"
