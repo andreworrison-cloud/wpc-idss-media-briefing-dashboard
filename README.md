@@ -17,7 +17,7 @@ The map uses [weather.gov alert colors and priorities](https://www.weather.gov/h
 
 This repository owns its GitHub Pages workflow. It checks at minutes 07, 17, 27, 37, 47 and 57 UTC each hour, on main-branch pushes, and on manual dispatch. GitHub schedules are best effort. Each job reads the dedicated IDSS collector, obtains the independent impact feeds, validates the public evidence and publishes the completed release. A source failure is labeled on its own panel. Open tabs check the website every two minutes and age out expired figures. The site’s static JSON and HTML are verified after each deployment. Main-branch releases also exercise the website in desktop and phone Chrome viewports.
 
-The upstream public collector provides NWS alerts, preliminary local storm reports, WPC rainfall, winter and medium-range hazards, Key Messages and archived shift handoffs. Private staging, credentials and raw reports are excluded from this repository. GitHub Pages uses **Settings → Pages → Source → GitHub Actions**.
+The upstream public collector provides NWS alerts, preliminary local storm reports, WPC rainfall, winter and medium-range hazards, Key Messages and archived shift handoffs. Private staging, credentials and raw reports are excluded from this repository. GitHub Pages can serve the same root viewer from the Actions artifact or the default branch during a code update. The dedicated `idss-public-current` data branch holds one reviewed board and shift edition for branch publishing. A guarded update replaces only its generated files.
 
 ## Run locally
 

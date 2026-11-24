@@ -511,3 +511,8 @@ noscript { display: block; padding: 12px var(--pad); background: white; color: #
   .gauge-key { gap: 1px 5px; } .gauge-key span { font-size: 11px; }
   .impact-metrics .metric:nth-child(n+3) { border-top: 3px solid var(--metric-accent); }
 }
+@media (max-width:500px) {
+  .mast-in .nav { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(0,.9fr) minmax(0,1fr); width: 100%; gap: 1px; }
+  .mast-in .nav a { min-width: 0; padding: 6px 2px; gap: 4px; }
+  .mast-in .nav a svg { display: none; }
+}

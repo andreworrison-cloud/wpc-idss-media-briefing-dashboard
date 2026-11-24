@@ -4,7 +4,7 @@ import {existsSync, readFileSync} from 'node:fs';
 import test from 'node:test';
 
 const assets = existsSync(new URL('./hazard-palette.js', import.meta.url)) ?
-  new URL('./', import.meta.url) : new URL('../site/assets/', import.meta.url);
+  new URL('./', import.meta.url) : new URL('../assets/', import.meta.url);
 const {WWA, ERO_COLORS, ERO_OUTLINES, WSSI_COLORS, EXTENDED_COLORS, alertStyle, alertDrawOrder, inkFor, appendAlertPath} =
   await import(new URL('hazard-palette.js', assets));
 const {OUTAGE_LEGEND, outageBand, loadOutageAtlas, renderOutageOverlay} = await import(new URL('outage-map.js', assets));

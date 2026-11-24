@@ -1,3 +1,4 @@
+import {readRelease} from './release.js';
 import {renderImpacts} from './impacts.js';
 import {impactOverlay} from './impact-map.js';
 import {links, freshImpact, exposureRecords} from './impact-logic.js';
@@ -109,7 +110,7 @@ function drawPriorities(){
  const cards=priorities(board);$('priorities').innerHTML=cards.length?cards.map(s=>'<article class="story" style="--hazard-color:'+(s.tag==='Active warning'?alertStyle(s.title.split(' · ')[0]).color:s.tag==='Observed impact'?'#71e0ca':'#82c6fa')+'"><div class="story-top">'+esc(s.tag)+'</div><h3>'+esc(s.title)+'</h3><p>'+esc(s.body.length>185?s.body.slice(0,182)+'…':s.body)+'</p><div class="story-action">'+ext(s.link,s.label)+'</div></article>').join(''):empty('No priority item can be verified from the current source collection.');
 }
 async function loadShift(){
- try{const r=await fetch('./data/handoff.json?t='+Math.floor(Date.now()/120000),{cache:'no-store'});if(r.ok){shiftEdition=(await r.json()).edition;if(board)drawMessages();}}catch{}
+ try{shiftEdition=(await readRelease('handoff')).edition;if(board)drawMessages();}catch{}
 }
 function drawMessages(){
  const list=board.sources.messages?.items||[];
@@ -188,7 +189,7 @@ function route(){const view=['brief','sources'].includes(location.hash.slice(1))
 window.addEventListener('hashchange',route);
 function render(){renderImpacts(board,selectProduct,useFootprint);briefChoices();drawMetrics();drawMap();drawPriorities();drawTable();drawMessages();drawSources();drawBrief();const stale=Object.keys(labels).filter(k=>!['ok','partial'].includes(moduleState(board,k)));
  const status=$('sync-status');const impacts=board.impacts||{};const limited=stale.length||!freshImpact(impacts.power,Date.now(),35)||!freshImpact(impacts.aviation,Date.now(),30)||!freshImpact(impacts.ground?.rivers,Date.now(),60);status.style.setProperty('--status',board.storage==='unavailable'||limited?'#e9ac4a':'#56cfb0');status.textContent=(board.mode==='reviewed_snapshot'?'Saved collection ':'Collection ')+isoTime(board.captured_at,true)+(limited?' · limited feeds':'');}
-async function refresh(){if(loading)return;loading=true;const b=$('refresh');b.disabled=true;try{const r=await fetch('./data/board.json?t='+Math.floor(Date.now()/120000),{cache:'no-store'});if(!r.ok)throw Error();const v=await r.json();if(v.schema!==1||!v.sources)throw Error();board=v;render();}catch{if(board)render();$('sync-status').textContent=board?'Refresh unavailable · saved '+isoTime(board.captured_at,true):'Unable to load briefing data';}finally{loading=false;b.disabled=false;}}
+async function refresh(){if(loading)return;loading=true;const b=$('refresh');b.disabled=true;try{board=await readRelease('board');render();}catch{if(board)render();$('sync-status').textContent=board?'Refresh unavailable · saved '+isoTime(board.captured_at,true):'Unable to load briefing data';}finally{loading=false;b.disabled=false;}}
 $('refresh').onclick=refresh;
 function tick(){$('clock').textContent=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'}).toUpperCase()+'  /  '+isoTime(new Date());}
 route();tick();refresh();loadShift();setInterval(tick,15000);setInterval(()=>{if(!document.hidden){if(board)render();refresh();loadShift();}},120000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});

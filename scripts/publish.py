@@ -16,7 +16,7 @@ SOURCES = {'alerts', 'reports', 'ero', 'winter', 'outlook', 'messages'}
 REPORT_FIELDS = set('id observation_id title family state states wfo city county valid issued lat lon magnitude unit qualifier trace impact_flags height_ft_agl height_estimated accumulation_hours preliminary revision revision_match source_url'.split())
 RAW_KEYS = {'remarks', 'reporter', 'reporter_name', 'reported_by', 'email', 'spreadsheetid', 'private_key', 'access_token', 'raw_rows', 'raw_text'}
 IMPACT_HOSTS = ('noaa.gov', 'weather.gov', 'iastate.edu', 'poweroutmap.com', 'poweroutage.us', 'ornl.gov', 'census.gov', 'faa.gov', 'flightaware.com', 'dot.gov', 'bts.gov')
-ASSETS = ('impact-logic.js','impacts.js','impact-map.js','hazard-palette.js','outage-map.js','outage-atlas.json','alert-zones.js', 'barlow.woff2', 'barlowcondensed-license.txt', 'desk.css', 'desk.js', 'dm-sans.woff2', 'dmsans-license.txt', 'logic.js', 'map-base.js', 'map-counties.json', 'mark.svg', 'offices.js')
+ASSETS = ('release.js','impact-logic.js','impacts.js','impact-map.js','hazard-palette.js','outage-map.js','outage-atlas.json','alert-zones.js', 'barlow.woff2', 'barlowcondensed-license.txt', 'desk.css', 'desk.js', 'dm-sans.woff2', 'dmsans-license.txt', 'logic.js', 'map-base.js', 'map-counties.json', 'mark.svg', 'offices.js')
 
 
 class FixedOrigin(HTTPRedirectHandler):
@@ -128,9 +128,9 @@ def publish():
         output = Path(tmp) / 'public'
         (output / 'assets').mkdir(parents=True)
         (output / 'data').mkdir()
-        shutil.copyfile(ROOT / 'site/index.html', output / 'index.html')
+        shutil.copyfile(ROOT / 'index.html', output / 'index.html')
         for name in ASSETS:
-            shutil.copyfile(ROOT / 'site/assets' / name, output / 'assets' / name)
+            shutil.copyfile(ROOT / 'assets' / name, output / 'assets' / name)
         for name, document in [('board', board), ('handoff', handoff)]:
             (output / 'data' / f'{name}.json').write_text(json.dumps(document, ensure_ascii=False, separators=(',', ':'), allow_nan=False), encoding='utf-8')
         destination = ROOT / '_site'

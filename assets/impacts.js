@@ -50,10 +50,12 @@ function powerPanel(p,onMap) {
   const target=byId('power-panel');
   const live=freshImpact(p,Date.now(),35), states=live&&p.states_status==='current'&&recent(p.states_as_of,Date.now(),35)?p.states:[];
   const rows=states.filter(r=>r.customers_out>0).slice(0,5), max=rows[0]?.customers_out||1;
+  const counties=live&&p.counties_status==='current'&&recent(p.counties_as_of,Date.now(),35)?(p.counties||[]).filter(r=>r.customers_out>0).slice(0,10):[];
+  const countyDetails=counties.length?extendedList('Counties with the most reported outages',table(['County or equivalent','State','Customer accounts out'],counties.map(r=>[esc(r.name),esc(r.state),countText(r.customers_out)]))+note('County data as of '+when(p.counties_as_of)+'.')):'';
   const mapPick=formSelect('outage-level','Heatmap geography',[['county','Counties',selected.powerLevel==='county'],['state','States',selected.powerLevel==='state']]);
   const bars=rows.map(r=>`<li class="impact-rank"><span>${esc(r.name)}</span><span class="rank-bar" aria-hidden="true"><i style="width:${100*r.customers_out/max}%"></i></span><b>${countText(r.customers_out)}</b></li>`).join('');
   target.innerHTML=(live?summary(countText(p.customers_out),'electric customer accounts without power')+note([Number.isFinite(p.reporting_utilities)?countText(p.reporting_utilities)+' utilities reporting':null,Number.isFinite(p.coverage_percent)?pct(p.coverage_percent)+' estimated customer coverage':null].filter(Boolean).join(' · ')) :unavailable('utility',p))+
-    (bars?`<h4>States with the most reported outages</h4><ol class="impact-ranks">${bars}</ol>`:'')+mapPick+note('An account may serve a home or business. Unreported counties appear hatched. The utility counts include outages from all causes.')+sourceLine([url(links.power,'Data from Power Out Map'),url(links.powerTracker,'PowerOutage.us map')],p?.as_of);
+    (bars?`<h4>States with the most reported outages</h4><ol class="impact-ranks">${bars}</ol>`:'')+countyDetails+mapPick+note('An account may serve a home or business. Unreported counties appear hatched. The utility counts include outages from all causes.')+sourceLine([url(links.power,'Data from Power Out Map'),url(links.powerTracker,'PowerOutage.us map')],p?.as_of);
   byId('outage-level').onchange=e=>{selected.powerLevel=e.target.value;onMap('power',true);};
 }
 function airPanel(a) {
@@ -67,7 +69,7 @@ function airPanel(a) {
   if(planned.length)html+=extendedList('Upcoming issued notices ('+planned.length+')',table(['Airport','Notice','Starts UTC'],planned.map(e=>[esc(e.airport),esc(e.label),esc(when(e.start_utc))])));
   html+=`<div class="flight-totals"><strong>U.S. flight delays &amp; cancellations today</strong>${url(a?.flight_counts?.url||links.flights,'View live FlightAware totals')}</div>`;
   const monthly=a?.monthly_context;
-  if(monthly?.status==='historical')html+=extendedList('Historical U.S. domestic flight totals · '+monthly.period_label,table(['BTS reporting month','Delayed arrivals (15+ min)','Cancellations'],[[esc(monthly.period_label),countText(monthly.delayed_arrivals),countText(monthly.cancelled)]])+note(monthly.coverage+'. '+countText(monthly.flight_operations)+' flight operations in the reporting month.')+sourceLine([url(monthly.source_url,'BTS monthly statistics')]));
+  if(monthly?.status==='historical')html+=extendedList('Historical U.S. domestic flight totals · '+monthly.period_label,table(['BTS reporting month','Delayed arrivals (15+ min)','Cancellations'],[[esc(monthly.period_label),countText(monthly.delayed_arrivals),countText(monthly.cancelled)]])+note(monthly.coverage.replace(/[. ]+$/,'')+'. '+countText(monthly.flight_operations)+' flight operations in the reporting month.')+sourceLine([url(monthly.source_url,'BTS monthly statistics')]));
   byId('aviation-panel').innerHTML=html+sourceLine([url(links.aviation,'FAA NAS Status')],a?.as_of);
 }
 function exposurePanel(board,onMap,openBrief) {

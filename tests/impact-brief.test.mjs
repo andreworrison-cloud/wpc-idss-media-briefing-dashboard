@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {addImpactEvidence, exposureRecords, residentCount, activeAirEvents} from '../site/assets/impact-logic.js';
+import {addImpactEvidence, exposureRecords, residentCount, activeAirEvents} from '../assets/impact-logic.js';
 const now=Date.parse('2026-11-24T23:00:00Z'), time=(m)=>new Date(now+m*60000).toISOString();
 const record={id:'ero-d2',label:'Day 2 excessive rainfall',family:'Flood',status:'current',valid_end:time(100),fresh_until:time(30),population:1000,states:[{code:'FL',population:800},{code:'CA',population:200}],bands:[{id:'slight',label:'Slight',population:300,states:[{code:'FL',population:300}]}]};
 const board={impacts:{exposure:{calculated_at:time(0),groups:{ero:[record]}},power:{status:'current',as_of:time(0),customers_out:7000,states_status:'current',states_as_of:time(0),states:[{state:'FL',name:'Florida',customers_out:50}]},aviation:{status:'ok',as_of:time(0),event_count:1,events:[{state:'CA',airport:'LAX',airport_name:'Los Angeles',kind:'departure_delay',label:'Departure delay',delay:'30 minutes'}]}}};

@@ -29,7 +29,7 @@ def read(url):
 
 def verify(page_url, revision):
     root = page_url.rstrip('/') + '/'
-    expected_html = (Path(__file__).resolve().parents[1] / 'site/index.html').read_bytes()
+    expected_html = (Path(__file__).resolve().parents[1] / 'index.html').read_bytes()
     for attempt in range(8):
         query = '?' + urlencode({'revision': revision, 'probe': time.time_ns()})
         try:

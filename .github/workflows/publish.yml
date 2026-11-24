@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -39,6 +39,10 @@ jobs:
         run: |
           python3 scripts/publish.py
           python3 -c 'import json; print("revision=" + json.load(open("_site/data/board.json"))["revision"])' >> "$GITHUB_OUTPUT"
+      - name: Publish the reviewed current-data pointer in this repo
+        env:
+          IDSS_PUBLICATION_TOKEN: ${{ github.token }}
+        run: python3 scripts/publish_current.py
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site

@@ -82,22 +82,22 @@ class PagesTests(unittest.TestCase):
                 for key, value in attrs:
                     if key in ('src', 'href') and value and not value.startswith(('#','https:')):
                         self.links.append(value)
-        parser = References(); parser.feed((ROOT/'site/index.html').read_text())
-        css = (ROOT/'site/assets/desk.css').read_text()
+        parser = References(); parser.feed((ROOT/'index.html').read_text())
+        css = (ROOT/'assets/desk.css').read_text()
         self.assertGreaterEqual(len(parser.links), 4)
         refs = [('index.html', url) for url in parser.links]
         for url in re.findall(r'url\(([^)]+)\)', css):
             target = url.strip("'\"")
             if not target.startswith('data:'):
                 refs.append(('assets/desk.css', target))
-        for js in (ROOT/'site/assets').glob('*.js'):
+        for js in (ROOT/'assets').glob('*.js'):
             refs += [('assets/'+js.name, url) for url in re.findall(r"from ['\"]([^'\"]+)['\"]", js.read_text())]
         root = 'https://example.github.io/one-project/'
         for filename, url in refs:
             resolved = urljoin(root + filename, url)
             self.assertTrue(resolved.startswith(root), resolved)
-            self.assertTrue((ROOT/'site'/urlsplit(resolved).path.removeprefix('/one-project/')).is_file(), f'{filename} → {url} → {resolved}')
-        self.assertEqual(set(ASSETS), {p.name for p in (ROOT/'site/assets').iterdir()})
+            self.assertTrue((ROOT/urlsplit(resolved).path.removeprefix('/one-project/')).is_file(), f'{filename} → {url} → {resolved}')
+        self.assertEqual(set(ASSETS), {p.name for p in (ROOT/'assets').iterdir()})
 
     def test_dedicated_workflow_has_no_cross_repository_trigger(self):
         workflow = (ROOT/'.github/workflows/publish.yml').read_text()
@@ -105,9 +105,9 @@ class PagesTests(unittest.TestCase):
         self.assertNotIn('wpc-hydro-dashboard', workflow)
         self.assertIn('workflow_dispatch:', workflow)
         self.assertIn('7,17,27,37,47,57 * * * *', workflow)
-        js = (ROOT/'site/assets/desk.js').read_text()
-        self.assertIn('./data/board.json?', js)
-        self.assertIn('./data/handoff.json?', js)
+        js = (ROOT/'assets/desk.js').read_text()
+        self.assertIn("readRelease('board')", js)
+        self.assertIn("readRelease('handoff')", js)
         self.assertNotIn("fetch('/api/", js)
 
 
