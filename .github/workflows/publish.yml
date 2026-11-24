@@ -34,11 +34,29 @@ jobs:
         run: PYTHONPATH=scripts python3 -m unittest discover -s tests
       - name: Check hazard colors and outage geography
         run: node --test tests/*.test.mjs
+      - name: Restore the last verified WSSI polygon file
+        id: wssi_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/idss-wssi/native.json.gz
+          key: idss-wssi-lookup-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: idss-wssi-native-v1-
       - name: Build the reviewed briefing
         id: snapshot
+        env:
+          IDSS_WSSI_CACHE_DIR: ${{ runner.temp }}/idss-wssi
         run: |
           python3 scripts/publish.py
           python3 -c 'import json; print("revision=" + json.load(open("_site/data/board.json"))["revision"])' >> "$GITHUB_OUTPUT"
+          if [[ -f "$IDSS_WSSI_CACHE_DIR/confirmed-key" ]]; then
+            echo "wssi_key=idss-wssi-native-v1-$(cat "$IDSS_WSSI_CACHE_DIR/confirmed-key")" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save the newly verified WSSI issuance
+        if: steps.snapshot.outputs.wssi_key != '' && steps.snapshot.outputs.wssi_key != steps.wssi_cache.outputs.cache-matched-key
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/idss-wssi/native.json.gz
+          key: ${{ steps.snapshot.outputs.wssi_key }}
       - name: Publish the reviewed current-data pointer in this repo
         env:
           IDSS_PUBLICATION_TOKEN: ${{ github.token }}

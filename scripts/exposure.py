@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from functools import lru_cache
+import gzip
 import hashlib
 import json
 import lzma
@@ -389,33 +390,80 @@ def _ero(board, now, centers, health):
     return result
 
 
+def _download_wssi_native():
+    query = urlencode(
+        {
+            "where": "impact IN ('MODERATE','MAJOR','EXTREME')",
+            "outFields": "objectid,product,component,impact,issue_time,start_time,end_time",
+            "outSR": "4326",
+            "returnGeometry": "true",
+            "f": "geojson",
+        }
+    )
+    request = Request(
+        WSSI_LAYER + "/query?" + query,
+        headers={"Accept": "application/json", "User-Agent": "WPC-IDSS-Dashboard/1.0"},
+    )
+    with urlopen(request, timeout=20) as response:
+        raw = response.read(64_000_001)
+    if len(raw) > 64_000_000:
+        raise ValueError("WSSI download exceeded the collector size limit")
+    return json.loads(raw)
+
+
+def _wssi_fingerprint(w):
+    cycle = {key: w.get(key) for key in ("issued", "valid_start", "valid_end", "features")}
+    return hashlib.sha256(json.dumps(cycle, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 def _wssi_native(w, native):
-    """Match each native sublayer polygon to the public, generalized map's same feature and forecast cycle."""
+    """Use full-resolution polygons for the exact issuance, valid window, feature IDs and displayed boundaries."""
     expected = {}
     for feature in w["features"]:
         stamp, object_id = feature["id"].rsplit("/", 1)
         if _dt(stamp) != _dt(w["issued"]) or int(object_id) in expected:
             raise ValueError("Unexpected WSSI feature ID")
         expected[int(object_id)] = feature["properties"]["impact"]
-    if native is None:
-        query = urlencode(
-            {
-                "where": "impact IN ('MODERATE','MAJOR','EXTREME')",
-                "outFields": "objectid,product,component,impact,issue_time,start_time,end_time",
-                "outSR": "4326",
-                "returnGeometry": "true",
-                "f": "geojson",
-            }
-        )
-        request = Request(
-            WSSI_LAYER + "/query?" + query,
-            headers={"Accept": "application/json", "User-Agent": "WPC-IDSS-Dashboard/1.0"},
-        )
-        with urlopen(request, timeout=20) as response:
-            raw = response.read(64_000_001)
-        if len(raw) > 64_000_000:
-            raise ValueError("WSSI download exceeded the collector size limit")
-        native = json.loads(raw)
+    if native is not None:
+        return _validate_wssi_native(w, native, expected)
+    cache_dir = os.environ.get("IDSS_WSSI_CACHE_DIR")
+    path = Path(cache_dir) / "native.json.gz" if cache_dir else None
+    key = _wssi_fingerprint(w)
+    if path and path.is_file():
+        try:
+            with gzip.open(path, "rb") as cached:
+                blob = cached.read(64_000_001)
+            if len(blob) <= 64_000_000:
+                previous = json.loads(blob)
+                if previous.get("key") == key:
+                    result = _validate_wssi_native(w, previous["source"], expected)
+                    (path.parent / "confirmed-key").write_text(key)
+                    return result
+        except (OSError, EOFError, ValueError, KeyError, TypeError):
+            pass
+    for attempt in range(2):
+        try:
+            source = _download_wssi_native()
+            result = _validate_wssi_native(w, source, expected)
+            break
+        except (OSError, ValueError, KeyError, TypeError):
+            if attempt:
+                raise
+    if path:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = json.dumps({"key": key, "source": source}, separators=(",", ":")).encode()
+            if len(payload) <= 64_000_000:
+                with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+                    stream.write(gzip.compress(payload, compresslevel=3, mtime=0))
+                os.replace(stream.name, path)
+                (path.parent / "confirmed-key").write_text(key)
+        except OSError:
+            pass  # The validated live data can still be used without a persistent cache.
+    return result
+
+
+def _validate_wssi_native(w, native, expected):
     if (
         not isinstance(native, dict)
         or native.get("type") != "FeatureCollection"

@@ -1,5 +1,8 @@
+import tempfile
 import json
+import os
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -226,6 +229,18 @@ class FeedTests(unittest.TestCase):
             "features": [{"properties": p, "geometry": polygon(box(0, 0, 0.5, 0.5))}],
         }
         self.assertEqual(e._winter(b, NOW, self.c, ("current", STAMP, END), src)[0]["population"], 10)
+        with tempfile.TemporaryDirectory() as cache, patch.dict(os.environ, {"IDSS_WSSI_CACHE_DIR": cache}):
+            w = b["sources"]["winter"]
+            with patch.object(e, "_download_wssi_native", side_effect=[OSError("Temporary GIS failure"), src]) as download:
+                first = e._wssi_native(w, None)
+                self.assertEqual(download.call_count, 2)
+            with patch.object(e, "_download_wssi_native", side_effect=OSError("offline")) as download:
+                self.assertEqual(e._wssi_native(w, None), first)
+                download.assert_not_called()
+                changed = {**w, "valid_end": "2026-11-28T18:00:00Z"}
+                with self.assertRaises(OSError):
+                    e._wssi_native(changed, None)
+                self.assertEqual(download.call_count, 2)
         p["start_time"] = "12Z 11/24/26"
         out = e._winter(b, NOW, self.c, ("current", STAMP, END), src)[0]
         self.assertEqual((out["status"], out["population"]), ("unavailable", None))
