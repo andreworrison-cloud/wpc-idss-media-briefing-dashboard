@@ -17,6 +17,8 @@ def validate_release(html, board, expected_html, revision):
         raise ValueError(f"Expected revision {revision}; served {board.get('revision')}")
     if set(board.get('sources', {})) != SOURCES or set(board.get('health', {})) != SOURCES:
         raise ValueError('The public release has an unexpected source inventory')
+    if set(board.get('impacts', {})) != {'aviation','power','ground','exposure'}:
+        raise ValueError('The public release is missing its impact data')
 
 
 def read(url):

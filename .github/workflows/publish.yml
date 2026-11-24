@@ -5,11 +5,6 @@ on:
     - cron: '7,17,27,37,47,57 * * * *'
   push:
     branches: [main]
-    paths:
-      - 'site/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - '.github/workflows/publish.yml'
 
 permissions: {}
 concurrency:
@@ -21,15 +16,24 @@ jobs:
     outputs:
       revision: ${{ steps.snapshot.outputs.revision }}
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 12
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/exposure-requirements.txt
+      - name: Install Census geometry dependencies
+        run: python -m pip install -r scripts/exposure-requirements.txt
       - name: Test publication checks
-        run: python3 -m unittest discover -s tests
+        run: PYTHONPATH=scripts python3 -m unittest discover -s tests
+      - name: Check hazard colors and outage geography
+        run: node --test tests/*.test.mjs
       - name: Build the reviewed briefing
         id: snapshot
         run: |
@@ -41,9 +45,10 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 12
     permissions:
       contents: read
+      actions: read
       pages: write
       id-token: write
     environment:
@@ -53,21 +58,27 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Confirm the repository’s Pages source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/pages_source.py
       - name: Publish the complete release
         id: deployment
         uses: actions/deploy-pages@v4
-      - name: Check the Pages publishing source
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if mode=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq '.build_type'); then
-            echo "GitHub Pages publishing mode is $mode"
-            if [[ "$mode" == "legacy" ]]; then
-              echo "::warning::Select GitHub Actions as the Pages source. Branch publishing can replace the dashboard with a second build."
-            fi
-          fi
       - name: Verify the live briefing
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
           REVISION: ${{ needs.build.outputs.revision }}
         run: python3 -m scripts.verify_pages "$PAGE_URL" "$REVISION"
+      - name: Exercise the published command center in Chrome
+        if: github.event_name != 'schedule'
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: python3 scripts/check_browser.py "$PAGE_URL"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'schedule' && always()
+        with:
+          name: command-center-browser-check
+          path: browser-check/*.png
+          retention-days: 3
+          if-no-files-found: ignore

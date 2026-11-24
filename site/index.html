@@ -1,42 +1,238 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#10243a"><meta name="description" content="An experimental national briefing desk for official WPC forecasts, NWS alerts and preliminary weather impacts."><title>Impact Briefing Desk | WPC IDSS</title><link rel="icon" href="./assets/mark.svg" type="image/svg+xml"><link rel="stylesheet" href="./assets/desk.css"><script defer src="./assets/map-base.js"></script><script type="module" src="./assets/desk.js"></script></head>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#081426">
+  <meta name="description" content="A national weather impact desk for power outages, air travel disruptions, population exposure and official weather products.">
+  <title>National Impact Command Center | WPC IDSS</title>
+  <link rel="icon" href="./assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/desk.css">
+  <script defer src="./assets/map-base.js"></script>
+  <script type="module" src="./assets/desk.js"></script>
+</head>
 <body>
-<a class="skip" href="#main">Skip to briefing</a>
-<svg aria-hidden="true" class="icon-bank" xmlns="http://www.w3.org/2000/svg"><defs>
-<symbol id="i-map" viewBox="0 0 24 24"><path d="m3 5 6-2 6 3 6-2v15l-6 2-6-3-6 2zM9 3v15m6-12v15"/></symbol>
-<symbol id="i-file" viewBox="0 0 24 24"><path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8m-8 4h6"/></symbol>
-<symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2 8 3v6c0 5-3.3 8.7-8 11-4.7-2.3-8-6-8-11V5zM8 11l3 3 5-6"/></symbol>
-<symbol id="i-cycle" viewBox="0 0 24 24"><path d="M20 10a8 8 0 0 0-14-4L3 9m0-5v5h5M4 14a8 8 0 0 0 14 4l3-3m0 5v-5h-5"/></symbol>
-<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></symbol>
-<symbol id="i-alert" viewBox="0 0 24 24"><path d="m12 3 10 17H2zM12 8v5m0 3h.01"/></symbol>
-<symbol id="i-pin" viewBox="0 0 24 24"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.4"/></symbol>
-<symbol id="i-cloud" viewBox="0 0 24 24"><path d="M6 15a4.2 4.2 0 0 1-.3-8.4 6 6 0 0 1 11.5 1A3.8 3.8 0 0 1 18 15H6Zm1 3-1 3m6-3-1 3m6-3-1 3"/></symbol>
-<symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="7" r="3"/><path d="M2 20v-2a7 7 0 0 1 14 0v2m-1-15a3 3 0 0 1 0 6m3 3a5.5 5.5 0 0 1 4 5v1"/></symbol>
-<symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="7" width="12" height="14" rx="2"/><path d="M15 7V3H4v14h4"/></symbol>
-<symbol id="i-print" viewBox="0 0 24 24"><path d="M6 8V3h12v5M6 18H3V9h18v9h-3M6 14h12v7H6zM17 11h1"/></symbol>
-<symbol id="i-focus" viewBox="0 0 24 24"><path d="M3 9V3h6m6 0h6v6m0 6v6h-6m-6 0H3v-6"/><circle cx="12" cy="12" r="2"/></symbol>
-<symbol id="i-layers" viewBox="0 0 24 24"><path d="m2 8 10-5 10 5-10 5zm1 5 9 4 9-4M3 17l9 4 9-4"/></symbol>
-<symbol id="i-list" viewBox="0 0 24 24"><path d="M7 5h14M7 12h14M7 19h14M3 5h.01M3 12h.01M3 19h.01"/></symbol>
-</defs></svg>
-<header class="mast"><div class="mast-in"><a href="#board" class="brand" aria-label="Impact Briefing Desk home"><img src="./assets/mark.svg" width="39" height="39" alt=""><span><strong>Impact Briefing Desk</strong><small>WPC &nbsp;/&nbsp; DECISION SUPPORT</small></span></a>
-<nav class="nav" aria-label="Briefing desk"><a href="#board" data-nav="board"><svg><use href="#i-map"/></svg>Briefing board</a><a href="#brief" data-nav="brief"><svg><use href="#i-file"/></svg>Media brief</a><a href="#sources" data-nav="sources"><svg><use href="#i-shield"/></svg>Sources</a></nav>
-<div class="mast-clock"><svg><use href="#i-clock"/></svg><span id="clock">UTC</span></div></div></header>
-<main id="main" tabindex="-1"><section id="board-view" class="view">
-<div class="page-intro"><div><div class="kicker"><i></i> National operations</div><h1>National impact briefing</h1><p>Forecast hazards, active alerts and reported impacts across the United States.</p></div><div class="intro-actions"><span id="sync-status" class="sync" role="status">Loading sources</span><button class="button subtle" id="refresh"><svg><use href="#i-cycle"/></svg>Refresh</button></div></div>
-<div class="metrics" id="metrics" aria-label="National briefing indicators"></div>
-<div class="board-grid">
-<section class="panel map-panel"><div class="panel-head"><div><div class="kicker tertiary">National overview</div><h2>Hazard map</h2></div><div class="map-menu"><button class="button small" id="layers-btn" aria-expanded="false" aria-controls="layers-pop"><svg><use href="#i-layers"/></svg>Layers</button><div id="layers-pop" class="layer-pop" hidden><strong>Map layers</strong><label><input type="checkbox" id="show-reports" checked>Preliminary reports</label><label><input type="checkbox" id="show-alerts" checked>NWS alert polygons</label><label><input type="checkbox" id="show-counties">County boundaries</label></div></div></div>
-<div class="map-modeline"><label for="product">Forecast layer</label><select id="product"><option value="ero1">Day 1 rainfall outlook</option><option value="ero2">Day 2 rainfall outlook</option><option value="ero3">Day 3 rainfall outlook</option><option value="ero4">Day 4 rainfall outlook</option><option value="ero5">Day 5 rainfall outlook</option><option value="winter">Days 1–3 winter impacts</option><option value="outlook">Days 3–7 hazards</option><option value="none">Observations and alerts only</option></select><span id="map-phase"></span></div>
-<div class="map-stage" id="map-stage"><svg id="atlas" role="img" tabindex="0" aria-label="Interactive national hazard map. Use plus or minus to zoom and arrow keys to pan."></svg><div class="map-controls"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-reset" aria-label="Reset national view"><svg><use href="#i-focus"/></svg></button></div><div id="map-pop" hidden class="map-pop"></div></div>
-<div id="map-legend" class="legend"></div><div class="map-foot" id="map-foot"></div></section>
-<section class="panel priority-panel"><div class="panel-head"><div><div class="kicker tertiary">Forecaster review</div><h2>Briefing priorities</h2></div><span class="priority-icon"><svg><use href="#i-list"/></svg></span></div><div id="priorities" class="priorities"></div><div class="priority-foot"><a class="button primary" href="#brief"><svg><use href="#i-file"/></svg>Prepare media brief</a></div></section></div>
-<div class="section-header"><div><div class="kicker">Supporting evidence</div><h2>Forecasts and observations</h2></div><div class="segmented" aria-label="Evidence view"><button data-evidence="reports" aria-pressed="true">Reports</button><button data-evidence="alerts" aria-pressed="false">Alerts</button><button data-evidence="outlook" aria-pressed="false">Outlook</button></div></div>
-<section class="panel evidence-panel"><div class="table-tools"><div><h3 id="table-title">Preliminary storm reports</h3><p id="table-caption"></p></div><label class="search-label"><span>Filter evidence</span><input type="search" id="evidence-search" placeholder="State, location or hazard"></label></div><div id="evidence-table"></div><div id="table-pager" class="pager"></div></section>
-<div class="bottom-grid"><section class="panel"><div class="panel-head"><div><div class="kicker tertiary">Official products</div><h2>Key Messages</h2></div></div><div id="messages-panel" class="body-panel"></div></section><section class="panel"><div class="panel-head"><div><div class="kicker tertiary">Shift handoff</div><h2>What changed</h2></div></div><div id="changes" class="body-panel"></div></section></div>
-</section>
-<section id="brief-view" class="view" hidden><div class="page-intro"><div><div class="kicker"><i></i> Interview preparation</div><h1>Media brief</h1><p>Build a draft from the public evidence for your area and reporting window.</p></div><div class="intro-actions"><button class="button" id="copy"><svg><use href="#i-copy"/></svg>Copy brief</button><button class="button primary" id="print"><svg><use href="#i-print"/></svg>Print / PDF</button></div></div>
-<div class="brief-grid"><form class="panel brief-form" id="brief-form"><div class="kicker tertiary">Brief settings</div><h2>Define the event</h2><label>Brief title<input id="brief-name" maxlength="110" placeholder="National weather briefing"></label><label>States or territories<input id="brief-states" autocomplete="off" placeholder="All areas, or CA, OR, WA"></label><label>Forecast offices<input id="brief-wfos" autocomplete="off" placeholder="All offices, or MTR, LOX"></label><label>Hazard<select id="brief-family"><option value="">All hazards</option><option value="flood">Flooding and heavy rain</option><option value="coastal">Coastal hazards</option><option value="winter">Winter weather</option><option value="wind">Wind</option><option value="severe">Severe storms</option><option value="heat">Heat</option><option value="cold">Cold</option><option value="fire">Fire weather</option><option value="tropical">Tropical weather</option><option value="marine">Marine</option><option value="other">Other hazards</option></select></label><label>Report lookback<select id="brief-hours"><option>6</option><option>12</option><option selected>24</option><option>36</option><option>48</option><option>72</option></select></label><button type="submit" class="button primary">Generate brief</button><div id="form-error" class="form-error" role="alert"></div></form><article class="panel brief-paper" id="brief-output"></article></div><p id="copy-note" role="status"></p></section>
-<section id="sources-view" class="view" hidden><div class="page-intro"><div><div class="kicker"><i></i> Data and provenance</div><h1>Source health</h1><p>Compare observation time, product issuance and the most recent collection.</p></div></div><div class="panel evidence-panel"><div id="sources-table"></div></div><div class="bottom-grid"><div class="panel notes"><h2>Population exposure</h2><p>The Day 1 population table comes from WPC. Each number covers all areas in the published risk category across the contiguous United States. Counts describe the population inside a forecast area. A particular storm’s actual impacts require separate evidence.</p><div id="pop-source"></div></div><div class="panel notes"><h2>Official forecast desks</h2><div class="link-list"><a href="https://www.weather.gov/wssi/" target="_blank" rel="noopener">Winter Storm Severity Index</a><a href="https://origin-east-www-wpc.woc.noaa.gov/heatrisk/" target="_blank" rel="noopener">HeatRisk</a><a href="https://origin-east-www-wpc.woc.noaa.gov/metwatch/metwatch_mpd_multi.php" target="_blank" rel="noopener">Mesoscale Precipitation Discussions</a><a href="https://www.weather.gov/owp/operations" target="_blank" rel="noopener">National Water Center operations</a><a href="https://www.nhc.noaa.gov/" target="_blank" rel="noopener">National Hurricane Center</a><a href="https://www.spc.noaa.gov/" target="_blank" rel="noopener">Storm Prediction Center</a></div></div></div></section></main>
-<footer><span>Impact Briefing Desk &nbsp;/&nbsp; Experimental decision support</span><span>All times UTC &nbsp;·&nbsp; Forecaster review required</span></footer>
-<noscript>This briefing desk requires JavaScript. Official products are available at weather.gov and wpc.ncep.noaa.gov.</noscript>
-</body></html>
+  <a class="skip" href="#main">Skip to briefing</a>
+  <svg aria-hidden="true" class="icon-bank" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <symbol id="i-desk" viewBox="0 0 32 32"><path d="M2 20c5 1 8-2 11-8 3-7 8-10 15-9M2 25c7 1 11-3 15-11 3-5 7-8 13-7M5 29c7 0 12-5 16-13 2-4 5-6 9-6M2 14c3-1 5-4 7-8l2-3"/></symbol>
+      <symbol id="i-map" viewBox="0 0 24 24"><path d="m3 5 6-2 6 3 6-2v15l-6 2-6-3-6 2zM9 3v15m6-12v15"/></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8m-8 4h6"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2 8 3v6c0 5-3.3 8.7-8 11-4.7-2.3-8-6-8-11V5zM8 11l3 3 5-6"/></symbol>
+      <symbol id="i-cycle" viewBox="0 0 24 24"><path d="M20 10a8 8 0 0 0-14-4L3 9m0-5v5h5M4 14a8 8 0 0 0 14 4l3-3m0 5v-5h-5"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="m12 3 10 17H2zM12 8v5m0 3h.01"/></symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.4"/></symbol>
+      <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M6 15a4.2 4.2 0 0 1-.3-8.4 6 6 0 0 1 11.5 1A3.8 3.8 0 0 1 18 15H6Zm1 3-1 3m6-3-1 3m6-3-1 3"/></symbol>
+      <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="7" r="3"/><path d="M2 20v-2a7 7 0 0 1 14 0v2m-1-15a3 3 0 0 1 0 6m3 3a5.5 5.5 0 0 1 4 5v1"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="7" width="12" height="14" rx="2"/><path d="M15 7V3H4v14h4"/></symbol>
+      <symbol id="i-print" viewBox="0 0 24 24"><path d="M6 8V3h12v5M6 18H3V9h18v9h-3M6 14h12v7H6zM17 11h1"/></symbol>
+      <symbol id="i-focus" viewBox="0 0 24 24"><path d="M3 9V3h6m6 0h6v6m0 6v6h-6m-6 0H3v-6"/><circle cx="12" cy="12" r="2"/></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="m2 8 10-5 10 5-10 5zm1 5 9 4 9-4M3 17l9 4 9-4"/></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><path d="M7 5h14M7 12h14M7 19h14M3 5h.01M3 12h.01M3 19h.01"/></symbol>
+      <symbol id="i-power" viewBox="0 0 24 24"><path d="m13.5 2-9 12h6l-1 8 10-13h-6z"/></symbol>
+      <symbol id="i-plane" viewBox="0 0 24 24"><path d="m21 3-1.1-.1a3.1 3.1 0 0 0-2.3 1l-4.1 4.4-8.2-2.5-1.7 1.7 7.2 4.2-4.3 4.9-3.3-.6-1 1 4.6 2.2L9 23l1.1-1.1-.8-3.5 5.1-4.2 4.2 7.2 1.7-1.7-2.6-8.2 4.2-4.3c1.3-1.4 1.6-3.2 0-4.2Z" transform="translate(1 -1) scale(.94)"/></symbol>
+      <symbol id="i-ground" viewBox="0 0 24 24"><path d="M2 19h20M3 19l6-9 4 5 3-4 5 8M13 5h6m-6 3h3"/><circle cx="6" cy="5" r="2"/></symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
+      <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5"/></symbol>
+    </defs>
+  </svg>
+
+  <header class="mast">
+    <div class="mast-in">
+      <a href="#board" class="brand" aria-label="WPC IDSS command center home">
+        <span class="desk-mark" aria-hidden="true"><svg><use href="#i-desk"/></svg></span>
+        <span><strong>WPC <span>/</span> IDSS</strong><small>Media briefing desk</small></span>
+      </a>
+      <nav class="nav" aria-label="Briefing desk">
+        <a href="#board" data-nav="board"><svg aria-hidden="true"><use href="#i-map"/></svg>Command center</a>
+        <a href="#brief" data-nav="brief"><svg aria-hidden="true"><use href="#i-file"/></svg>Media brief</a>
+        <a href="#sources" data-nav="sources"><svg aria-hidden="true"><use href="#i-shield"/></svg>Source health</a>
+      </nav>
+      <div class="mast-clock"><svg aria-hidden="true"><use href="#i-clock"/></svg><span id="clock">UTC</span></div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <section id="board-view" class="view">
+      <div class="operations">
+        <div class="shell">
+          <header class="page-intro">
+            <div>
+              <p class="eyebrow"><span aria-hidden="true" class="eyebrow-mark"></span> U.S. weather impacts</p>
+              <h1>National impact command center</h1>
+            </div>
+            <div class="intro-actions">
+              <span id="sync-status" class="sync" role="status">Loading collection</span>
+              <button class="button subtle" type="button" id="refresh"><svg aria-hidden="true"><use href="#i-cycle"/></svg>Refresh</button>
+            </div>
+          </header>
+
+          <div class="metrics impact-metrics" id="impact-metrics" aria-label="Power, air travel, resident exposure and river flooding indicators">
+            <article class="metric empty"><div class="metric-label">Power outages</div><div class="symbol"><svg aria-hidden="true"><use href="#i-power"/></svg></div><strong>Loading</strong><span class="context">Checking outage coverage</span></article>
+            <article class="metric empty"><div class="metric-label">Air travel</div><div class="symbol"><svg aria-hidden="true"><use href="#i-plane"/></svg></div><strong>Loading</strong><span class="context">Checking aviation reporting</span></article>
+            <article class="metric empty"><div class="metric-label">Population exposure</div><div class="symbol"><svg aria-hidden="true"><use href="#i-people"/></svg></div><strong>Loading</strong><span class="context">Checking forecast coverage</span></article>
+            <article class="metric empty"><div class="metric-label">Gauges in flood</div><div class="symbol"><svg aria-hidden="true"><use href="#i-ground"/></svg></div><strong>Loading</strong><span class="context">Checking river observations</span></article>
+          </div>
+
+          <div class="board-grid">
+            <section class="panel map-panel" aria-labelledby="map-title">
+              <div class="panel-head">
+                <div class="panel-title"><svg aria-hidden="true"><use href="#i-crosshair"/></svg><h2 id="map-title">National impact map</h2></div>
+                <div class="map-menu">
+                  <button class="button small" type="button" id="layers-btn" aria-expanded="false" aria-controls="layers-pop"><svg aria-hidden="true"><use href="#i-layers"/></svg>Overlays</button>
+                  <div id="layers-pop" class="layer-pop" hidden>
+                    <fieldset><legend>Map overlays</legend>
+                      <label><input type="checkbox" id="show-reports" checked> Preliminary storm reports</label>
+                      <label><input type="checkbox" id="show-alerts" checked> NWS alert polygons</label>
+                      <label><input type="checkbox" id="show-counties"> County boundaries</label>
+                    </fieldset>
+                  </div>
+                </div>
+              </div>
+              <div class="map-modeline">
+                <label for="product">Map layer</label>
+                <select id="product">
+                  <optgroup label="WPC forecasts">
+                    <option value="ero1" selected>Day 1 excessive rainfall outlook</option>
+                    <option value="ero2">Day 2 excessive rainfall outlook</option>
+                    <option value="ero3">Day 3 excessive rainfall outlook</option>
+                    <option value="ero4">Day 4 excessive rainfall outlook</option>
+                    <option value="ero5">Day 5 excessive rainfall outlook</option>
+                    <option value="winter">Days 1–3 winter storm severity</option>
+                    <option value="outlook">Days 3–7 hazards outlook</option>
+                  </optgroup>
+                  <optgroup label="Impacts and exposure">
+                    <option value="power">Power outage heatmap</option>
+                    <option value="aviation">Air travel disruptions</option>
+                    <option value="exposure">Population exposure</option>
+                    <option value="ground">Reported ground impacts</option>
+                  </optgroup>
+                  <option value="none">Alerts and observations only</option>
+                </select>
+                <span id="map-phase" role="status"></span>
+              </div>
+              <div class="map-stage" id="map-stage">
+                <svg id="atlas" role="img" tabindex="0" aria-label="Interactive U.S. hazard and impact map. Use plus or minus to zoom, arrow keys to pan, and Home to reset."></svg>
+                <div class="map-controls" aria-label="Map navigation">
+                  <button type="button" id="zoom-in" aria-label="Zoom in">+</button>
+                  <button type="button" id="zoom-out" aria-label="Zoom out">−</button>
+                  <button type="button" id="zoom-reset" aria-label="Reset national view"><svg aria-hidden="true"><use href="#i-focus"/></svg></button>
+                </div>
+                <div id="map-pop" hidden class="map-pop"></div>
+              </div>
+              <div id="map-legend" class="legend" aria-label="Map legend"></div>
+              <div class="map-foot" id="map-foot"></div>
+            </section>
+
+            <aside class="panel priority-panel" aria-labelledby="priority-title">
+              <div class="panel-head"><div class="panel-title"><svg aria-hidden="true"><use href="#i-list"/></svg><h2 id="priority-title">Briefing priorities</h2></div></div>
+              <div id="priorities" class="priorities"></div>
+              <div class="priority-foot"><a class="button primary" href="#brief"><svg aria-hidden="true"><use href="#i-file"/></svg>Prepare media brief<svg aria-hidden="true" class="action-arrow"><use href="#i-arrow"/></svg></a></div>
+            </aside>
+          </div>
+
+          <section class="forecast-indicators" aria-label="National forecast and observation indicators">
+            <div class="metrics" id="metrics"></div>
+          </section>
+        </div>
+      </div>
+
+      <div class="workspace">
+        <div class="shell">
+          <div class="section-header"><h2>Impact details</h2></div>
+          <div class="impact-grid">
+            <section class="panel impact-panel" aria-labelledby="power-heading">
+              <div class="panel-head"><div class="panel-title"><svg aria-hidden="true"><use href="#i-power"/></svg><h3 id="power-heading">Power outages</h3></div><button type="button" class="map-shortcut" data-map-product="power" aria-label="View power outages on the map"><svg aria-hidden="true"><use href="#i-map"/></svg>Map</button></div>
+              <div id="power-panel" class="impact-body"><p class="loading-note">Loading outage reporting…</p></div>
+            </section>
+            <section class="panel impact-panel" aria-labelledby="aviation-heading">
+              <div class="panel-head"><div class="panel-title"><svg aria-hidden="true"><use href="#i-plane"/></svg><h3 id="aviation-heading">Air travel</h3></div><button type="button" class="map-shortcut" data-map-product="aviation" aria-label="View air travel disruptions on the map"><svg aria-hidden="true"><use href="#i-map"/></svg>Map</button></div>
+              <div id="aviation-panel" class="impact-body"><p class="loading-note">Loading aviation reporting…</p></div>
+            </section>
+            <section class="panel impact-panel" aria-labelledby="exposure-heading">
+              <div class="panel-head"><div class="panel-title"><svg aria-hidden="true"><use href="#i-people"/></svg><h3 id="exposure-heading">Population exposure</h3></div><button type="button" class="map-shortcut" data-map-product="exposure" aria-label="View population exposure on the map"><svg aria-hidden="true"><use href="#i-map"/></svg>Map</button></div>
+              <div id="exposure-panel" class="impact-body"><p class="loading-note">Loading hazard footprints and population estimates…</p></div>
+            </section>
+            <section class="panel impact-panel" aria-labelledby="ground-heading">
+              <div class="panel-head"><div class="panel-title"><svg aria-hidden="true"><use href="#i-ground"/></svg><h3 id="ground-heading">Ground impacts</h3></div><button type="button" class="map-shortcut" data-map-product="ground" aria-label="View reported ground impacts on the map"><svg aria-hidden="true"><use href="#i-map"/></svg>Map</button></div>
+              <div id="ground-panel" class="impact-body"><p class="loading-note">Loading reported ground impacts…</p></div>
+            </section>
+          </div>
+
+          <div class="section-header">
+            <h2>Forecasts and observations</h2>
+            <div class="segmented" role="group" aria-label="Evidence view">
+              <button type="button" data-evidence="reports" aria-pressed="true">Reports</button>
+              <button type="button" data-evidence="alerts" aria-pressed="false">Alerts</button>
+              <button type="button" data-evidence="outlook" aria-pressed="false">Outlook</button>
+            </div>
+          </div>
+          <section class="panel evidence-panel" aria-labelledby="table-title">
+            <div class="table-tools">
+              <div><h3 id="table-title">Preliminary storm reports</h3><p id="table-caption"></p></div>
+              <label class="search-label"><span>Filter evidence</span><input type="search" id="evidence-search" placeholder="State, location or hazard"></label>
+            </div>
+            <div id="evidence-table"></div><div id="table-pager" class="pager"></div>
+          </section>
+          <div class="bottom-grid">
+            <section class="panel"><div class="panel-head"><h2>Official Key Messages</h2></div><div id="messages-panel" class="body-panel"></div></section>
+            <section class="panel"><div class="panel-head"><h2>Recent changes and handoff</h2></div><div id="changes" class="body-panel"></div></section>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="brief-view" class="view secondary-view" hidden>
+      <header class="secondary-head"><div class="shell page-intro">
+        <div><p class="eyebrow"><span aria-hidden="true" class="eyebrow-mark"></span> Interview preparation</p><h1>Media brief</h1><p class="intro-text">Build a source-linked draft for your area, hazard and reporting window.</p></div>
+        <div class="intro-actions"><button class="button" type="button" id="copy"><svg aria-hidden="true"><use href="#i-copy"/></svg>Copy brief</button><button class="button primary" type="button" id="print"><svg aria-hidden="true"><use href="#i-print"/></svg>Print / PDF</button></div>
+      </div></header>
+      <div class="workspace"><div class="shell">
+        <div class="brief-grid">
+          <form class="panel brief-form" id="brief-form">
+            <h2>Brief settings</h2>
+            <label>Brief title<input id="brief-name" maxlength="110" placeholder="National weather briefing"></label>
+            <label>States or territories<input id="brief-states" autocomplete="off" placeholder="All areas, or CA, OR, WA"></label>
+            <label>Forecast offices<input id="brief-wfos" autocomplete="off" placeholder="All offices, or MTR, LOX"></label>
+            <label>Hazard<select id="brief-family"><option value="">All hazards</option><option value="flood">Flooding and heavy rain</option><option value="coastal">Coastal hazards</option><option value="winter">Winter weather</option><option value="wind">Wind</option><option value="severe">Severe storms</option><option value="heat">Heat</option><option value="cold">Cold</option><option value="fire">Fire weather</option><option value="tropical">Tropical weather</option><option value="marine">Marine</option><option value="other">Other hazards</option></select></label>
+            <label>Population footprint<select id="brief-footprint"><option value="">Automatic for this hazard</option></select></label>
+            <label id="brief-band-field" hidden>Exposure category<select id="brief-band"></select></label>
+            <label>Report lookback (hours)<select id="brief-hours"><option>6</option><option>12</option><option selected>24</option><option>36</option><option>48</option><option>72</option></select></label>
+            <button type="submit" class="button primary">Generate brief<svg aria-hidden="true"><use href="#i-arrow"/></svg></button>
+            <div id="form-error" class="form-error" role="alert"></div>
+          </form>
+          <article class="panel brief-paper" id="brief-output" aria-label="Generated briefing draft"></article>
+        </div>
+        <p id="copy-note" role="status"></p>
+      </div></div>
+    </section>
+
+    <section id="sources-view" class="view secondary-view" hidden>
+      <header class="secondary-head"><div class="shell page-intro">
+        <div><p class="eyebrow"><span aria-hidden="true" class="eyebrow-mark"></span> Data and provenance</p><h1>Source health</h1><p class="intro-text">Check coverage, observation times and the latest collection before quoting a figure.</p></div>
+      </div></header>
+      <div class="workspace"><div class="shell">
+        <section class="panel evidence-panel source-block"><div class="panel-head"><h2>Impact sources</h2></div><div id="impact-source-rows" class="impact-source-rows"><p class="loading-note">Loading impact source availability…</p></div></section>
+        <section class="panel evidence-panel source-block"><div class="panel-head"><h2>Forecasts and observations</h2></div><div id="sources-table"></div></section>
+        <div class="bottom-grid">
+          <section class="panel notes"><h2>WPC rainfall exposure</h2><p>The Day 1 table counts residents in the published excessive rainfall risk categories across the contiguous United States. Each estimate refers to a forecast footprint.</p><div id="pop-source"></div></section>
+          <section class="panel notes"><h2>Official forecast desks</h2>
+            <div class="link-list">
+              <a href="https://www.weather.gov/help-map/" target="_blank" rel="noopener">NWS alert color key</a>
+              <a href="https://www.weather.gov/wssi/" target="_blank" rel="noopener">Winter Storm Severity Index</a>
+              <a href="https://origin-east-www-wpc.woc.noaa.gov/heatrisk/" target="_blank" rel="noopener">HeatRisk</a>
+              <a href="https://origin-east-www-wpc.woc.noaa.gov/metwatch/metwatch_mpd_multi.php" target="_blank" rel="noopener">Mesoscale Precipitation Discussions</a>
+              <a href="https://www.weather.gov/owp/operations" target="_blank" rel="noopener">National Water Center operations</a>
+              <a href="https://www.nhc.noaa.gov/" target="_blank" rel="noopener">National Hurricane Center</a>
+              <a href="https://www.spc.noaa.gov/" target="_blank" rel="noopener">Storm Prediction Center</a>
+            </div>
+          </section>
+        </div>
+      </div></div>
+    </section>
+  </main>
+  <footer><div class="shell"><span>WPC IDSS <b aria-hidden="true">/</b> Experimental decision support</span><span>All times UTC · Forecaster review required</span></div></footer>
+  <noscript>This briefing desk needs JavaScript. Official forecasts are available at weather.gov and wpc.ncep.noaa.gov.</noscript>
+</body>
+</html>

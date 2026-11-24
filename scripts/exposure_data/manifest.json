@@ -1,0 +1,323 @@
+{
+  "all_block_groups": 242335,
+  "census_url": "https://www.census.gov/geographies/reference-files/2020/geo/2020-centers-population.html",
+  "jurisdictions": {
+    "AK": {
+      "block_groups": 504,
+      "populated_centers": 504,
+      "population": 733391
+    },
+    "AL": {
+      "block_groups": 3925,
+      "populated_centers": 3921,
+      "population": 5024279
+    },
+    "AR": {
+      "block_groups": 2294,
+      "populated_centers": 2293,
+      "population": 3011524
+    },
+    "AZ": {
+      "block_groups": 4773,
+      "populated_centers": 4755,
+      "population": 7151502
+    },
+    "CA": {
+      "block_groups": 25607,
+      "populated_centers": 25557,
+      "population": 39538223
+    },
+    "CO": {
+      "block_groups": 4058,
+      "populated_centers": 4043,
+      "population": 5773714
+    },
+    "CT": {
+      "block_groups": 2716,
+      "populated_centers": 2705,
+      "population": 3605944
+    },
+    "DC": {
+      "block_groups": 571,
+      "populated_centers": 562,
+      "population": 689545
+    },
+    "DE": {
+      "block_groups": 706,
+      "populated_centers": 702,
+      "population": 989948
+    },
+    "FL": {
+      "block_groups": 13388,
+      "populated_centers": 13317,
+      "population": 21538187
+    },
+    "GA": {
+      "block_groups": 7446,
+      "populated_centers": 7433,
+      "population": 10711908
+    },
+    "HI": {
+      "block_groups": 1083,
+      "populated_centers": 1050,
+      "population": 1455271
+    },
+    "IA": {
+      "block_groups": 2703,
+      "populated_centers": 2701,
+      "population": 3190369
+    },
+    "ID": {
+      "block_groups": 1284,
+      "populated_centers": 1282,
+      "population": 1839106
+    },
+    "IL": {
+      "block_groups": 9898,
+      "populated_centers": 9892,
+      "population": 12812508
+    },
+    "IN": {
+      "block_groups": 5290,
+      "populated_centers": 5281,
+      "population": 6785528
+    },
+    "KS": {
+      "block_groups": 2461,
+      "populated_centers": 2447,
+      "population": 2937880
+    },
+    "KY": {
+      "block_groups": 3581,
+      "populated_centers": 3552,
+      "population": 4505836
+    },
+    "LA": {
+      "block_groups": 4294,
+      "populated_centers": 4273,
+      "population": 4657757
+    },
+    "MA": {
+      "block_groups": 5116,
+      "populated_centers": 5089,
+      "population": 7029917
+    },
+    "MD": {
+      "block_groups": 4079,
+      "populated_centers": 4057,
+      "population": 6177224
+    },
+    "ME": {
+      "block_groups": 1184,
+      "populated_centers": 1176,
+      "population": 1362359
+    },
+    "MI": {
+      "block_groups": 8386,
+      "populated_centers": 8216,
+      "population": 10077331
+    },
+    "MN": {
+      "block_groups": 4706,
+      "populated_centers": 4668,
+      "population": 5706494
+    },
+    "MO": {
+      "block_groups": 5031,
+      "populated_centers": 5025,
+      "population": 6154913
+    },
+    "MS": {
+      "block_groups": 2445,
+      "populated_centers": 2440,
+      "population": 2961279
+    },
+    "MT": {
+      "block_groups": 900,
+      "populated_centers": 900,
+      "population": 1084225
+    },
+    "NC": {
+      "block_groups": 7111,
+      "populated_centers": 7076,
+      "population": 10439388
+    },
+    "ND": {
+      "block_groups": 632,
+      "populated_centers": 631,
+      "population": 779094
+    },
+    "NE": {
+      "block_groups": 1648,
+      "populated_centers": 1648,
+      "population": 1961504
+    },
+    "NH": {
+      "block_groups": 997,
+      "populated_centers": 995,
+      "population": 1377529
+    },
+    "NJ": {
+      "block_groups": 6599,
+      "populated_centers": 6561,
+      "population": 9288994
+    },
+    "NM": {
+      "block_groups": 1614,
+      "populated_centers": 1606,
+      "population": 2117522
+    },
+    "NV": {
+      "block_groups": 1963,
+      "populated_centers": 1953,
+      "population": 3104614
+    },
+    "NY": {
+      "block_groups": 16070,
+      "populated_centers": 15739,
+      "population": 20201249
+    },
+    "OH": {
+      "block_groups": 9472,
+      "populated_centers": 9435,
+      "population": 11799448
+    },
+    "OK": {
+      "block_groups": 3374,
+      "populated_centers": 3340,
+      "population": 3959353
+    },
+    "OR": {
+      "block_groups": 2970,
+      "populated_centers": 2960,
+      "population": 4237256
+    },
+    "PA": {
+      "block_groups": 10173,
+      "populated_centers": 10105,
+      "population": 13002700
+    },
+    "PR": {
+      "block_groups": 2555,
+      "populated_centers": 2505,
+      "population": 3285874
+    },
+    "RI": {
+      "block_groups": 792,
+      "populated_centers": 787,
+      "population": 1097379
+    },
+    "SC": {
+      "block_groups": 3408,
+      "populated_centers": 3391,
+      "population": 5118425
+    },
+    "SD": {
+      "block_groups": 694,
+      "populated_centers": 694,
+      "population": 886667
+    },
+    "TN": {
+      "block_groups": 4562,
+      "populated_centers": 4550,
+      "population": 6910840
+    },
+    "TX": {
+      "block_groups": 18638,
+      "populated_centers": 18561,
+      "population": 29145505
+    },
+    "UT": {
+      "block_groups": 2020,
+      "populated_centers": 2014,
+      "population": 3271616
+    },
+    "VA": {
+      "block_groups": 5963,
+      "populated_centers": 5934,
+      "population": 8631393
+    },
+    "VT": {
+      "block_groups": 552,
+      "populated_centers": 550,
+      "population": 643077
+    },
+    "WA": {
+      "block_groups": 5311,
+      "populated_centers": 5296,
+      "population": 7705281
+    },
+    "WI": {
+      "block_groups": 4692,
+      "populated_centers": 4674,
+      "population": 5893718
+    },
+    "WV": {
+      "block_groups": 1639,
+      "populated_centers": 1639,
+      "population": 1793716
+    },
+    "WY": {
+      "block_groups": 457,
+      "populated_centers": 457,
+      "population": 576851
+    }
+  },
+  "parts": [
+    {
+      "name": "census-01.xz.b64",
+      "sha256": "a829758537b1416269eb1867e3dee1fef9853e71749662ef39953b31c07318c2"
+    },
+    {
+      "name": "census-02.xz.b64",
+      "sha256": "0b86de3af67aa05016767c8cce06abec949086cf7cdf2026de26023203fadc23"
+    },
+    {
+      "name": "census-03.xz.b64",
+      "sha256": "dc40ff48605b9e52926a5462cf40ad5d3805b7183816c35bb8ca668982003fa1"
+    },
+    {
+      "name": "census-04.xz.b64",
+      "sha256": "9299e8bea092e2cde057626662e61e09e0f321996915df7624797bf49389b226"
+    },
+    {
+      "name": "census-05.xz.b64",
+      "sha256": "8e4a8aaff0a2658bf1b76ccb9f5a181e1c69d2d4cea904a5325cc525c5ee0f2a"
+    },
+    {
+      "name": "census-06.xz.b64",
+      "sha256": "cca2a2d8f10ccadb96f6b0dc91639c900920d2630bd9a984820ebeefb4eb8088"
+    },
+    {
+      "name": "census-07.xz.b64",
+      "sha256": "c8ad99aedf35e2347554c1caba5ed6b4e117b6c8a842f9a5dde5670d45ae4068"
+    }
+  ],
+  "populated_centers": 240942,
+  "resident_population": 334735155,
+  "source_files": {
+    "cenpop-national.txt": {
+      "sha256": "e4a7ebbf07a8a8d846cea9d2daeb600dea50b1ec2d7703909e40d45c013cd63a",
+      "url": "https://www2.census.gov/geo/docs/reference/cenpop2020/blkgrp/CenPop2020_Mean_BG.txt"
+    },
+    "cenpop-states.txt": {
+      "sha256": "af37e0d68c617f417ef805a94c07cbb0f788863e3cc4db21a3b35f28766f2f06",
+      "url": "https://www2.census.gov/geo/docs/reference/cenpop2020/CenPop2020_Mean_ST.txt"
+    },
+    "z_16ap26.zip": {
+      "sha256": "010dc5eab64b6e326c969e252bd016f56a037b0444df8303658707bca4cc7fd8",
+      "url": "https://www.weather.gov/source/gis/Shapefiles/WSOM/z_16ap26.zip"
+    }
+  },
+  "zones": {
+    "catalog_url": "https://www.weather.gov/gis/PublicZones",
+    "covered_codes": 4025,
+    "effective": "2026-04-16",
+    "features": 4157,
+    "filename": "z_16ap26.zip",
+    "md5": "004dc6501dc3d50e7b36652cb9d02bd3",
+    "name": "forecast-zones.xz.b64",
+    "sha256": "642fde8ad925420fa918c60b2199613771d3b65682c525ca5c2cea77e1ddb578",
+    "topology_repairs": 0
+  }
+}

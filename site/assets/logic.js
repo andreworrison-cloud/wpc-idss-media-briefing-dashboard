@@ -1,3 +1,4 @@
+import {addImpactEvidence} from './impact-logic.js';
 const hour=3600000, minute=60000;
 export const labels={alerts:'NWS active alerts',reports:'NWS local storm reports via IEM',ero:'WPC Excessive Rainfall Outlook',winter:'WPC Winter Storm Severity Index',outlook:'WPC Days 3–7 Hazards Outlook',messages:'WPC and NWC Key Messages'};
 export const refs={alerts:'https://www.weather.gov/documentation/services-web-alerts',reports:'https://mesonet.agron.iastate.edu/lsr/',ero:'https://origin-east-www-wpc.woc.noaa.gov/qpf/excess_rain.shtml',winter:'https://www.weather.gov/wssi/',outlook:'https://origin-east-www-wpc.woc.noaa.gov/threats/threats.php',messages:'https://www.wpc.ncep.noaa.gov/'};
@@ -11,7 +12,7 @@ export const total=n=>Number.isFinite(n)?n.toLocaleString('en-US'):'Unavailable'
 export const readable=s=>String(s||'').replace(/[_-]/g,' ').replace(/^./,c=>c.toUpperCase());
 export const flagText=s=>flagLabels[s]||String(s).replace(/[_-]/g,' ').replace(/ reported$/i,'').toLowerCase();
 export function safeURL(value) {
-  try{const u=new URL(value);return u.protocol==='https:'&&['weather.gov','noaa.gov','iastate.edu'].some(h=>u.hostname===h||u.hostname.endsWith('.'+h))?u.href:null;}catch{return null;}
+  try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&['weather.gov','noaa.gov','iastate.edu','faa.gov','flightaware.com','poweroutage.us','poweroutmap.com','census.gov','ornl.gov','dot.gov','bts.gov'].some(h=>u.hostname===h||u.hostname.endsWith('.'+h))?u.href:null;}catch{return null;}
 }
 export function moduleState(board,key,now=Date.now()){
   const val=board?.sources?.[key], h=board?.health?.[key];
@@ -34,7 +35,7 @@ export function population(board,now=Date.now()){
   return p;
 }
 export function currentAlerts(b,now=Date.now()){
-  if(!usable(b,'alerts',now))return [];
+  if(!['ok','current','partial'].includes(moduleState(b,'alerts',now)))return [];
   return (b.sources.alerts.events||[]).filter(a=>Date.parse(a.effective)<=now&&Date.parse(a.expires)>now&&(!a.ends||Date.parse(a.ends)>now)).map(a=>{
     if(!a.segments?.length)return a;
     const live=a.segments.filter(s=>Date.parse(s.expires)>now&&Date.parse(s.effective)<=now);
@@ -143,7 +144,10 @@ export function makeBrief(board,scope,now=Date.now()){
   }
   if(!scoped&&(!scope.family||scope.family==='winter')&&w?.highest_impact)forecast.push('The highest Days 1–3 WSSI category in the issued forecast is '+w.highest_impact+' in the contiguous U.S. The forecast period ends '+isoTime(w.valid_end,true)+'.'+cite('WPC Winter Storm Severity Index',refs.winter));
   if(!scoped&&!scope.family&&o)forecast.push('The WPC medium-range hazards outlook covers '+dayName(o.valid_start_date)+' through '+dayName(o.valid_end_date)+'.'+cite('WPC Days 3–7 Hazards Outlook',o.source_url));
-  if(scoped)forecast.push('Use the official outlook map to verify local overlap. An event-specific resident exposure estimate is unavailable for this selection.'+cite('WPC official forecast products',refs.messages));
+  const impacts=addImpactEvidence(board,scope,now,cite,isoTime);
+  if(impacts.lines.length)sections.push({title:'Power, transportation and river observations',lines:impacts.lines});
+  forecast.push(...impacts.exposureLines);
+  if(scoped&&!impacts.exposureLines.length)forecast.push('Use the official outlook map to verify local overlap. A resident estimate for this selection is unavailable.'+cite('WPC official forecast products',refs.messages));
   if(!forecast.length)forecast.push('Review the official forecast for the selected hazard and valid period.'+cite('WPC official forecast products',refs.messages));
   sections.push({title:'Forecast and population exposure',lines:forecast});
   if(!scoped&&!scope.family){const msg=(board.sources.messages?.items||[]).find(m=>m.owner==='WPC'&&messageState(board,m,now)==='active');if(msg)review.push('WPC’s “'+msg.title+'” was issued '+isoTime(msg.issued_at,true)+' and expires '+isoTime(msg.valid_end,true)+'.'+cite(msg.title,msg.source_url));}

@@ -1,3 +1,7 @@
+import {renderImpacts} from './impacts.js';
+import {impactOverlay} from './impact-map.js';
+import {links, freshImpact, exposureRecords} from './impact-logic.js';
+import {ERO_COLORS as riskColors,WSSI_COLORS as winterColors,EXTENDED_COLORS as extendedColors,alertStyle,alertDrawOrder,appendAlertPath} from './hazard-palette.js';
 import {labels,refs,total,isoTime,dayName,readable,flagText,safeURL,moduleState,usable,activeDay,activeWinter,activeOutlook,population,currentAlerts,currentReports,priorities,reportValue,messageState,parseScope,makeBrief,signed} from './logic.js';
 import {officeCodes} from './offices.js';
 import {resolveAlertZones} from './alert-zones.js';
@@ -6,9 +10,6 @@ const icon=id=>'<svg aria-hidden="true"><use href="#i-'+id+'"/></svg>';
 const ext=(url,label)=>safeURL(url)?'<a href="'+esc(safeURL(url))+'" target="_blank" rel="noopener">'+esc(label)+'</a>':esc(label);
 const pill=(label,state)=>'<span class="pill '+(['stale','partial','unavailable','unverified','expired'].includes(state)?'warn':state==='reference_only'?'muted':'')+'">'+esc(label)+'</span>';
 const empty=t=>'<div class="blank">'+esc(t)+'</div>';
-const riskColors={Marginal:'#63bc62',Slight:'#ffdf57',Moderate:'#ef6952',High:'#d757c4'};
-const winterColors={Moderate:'#ffb041',Major:'#ff6569',Extreme:'#dca0ff'};
-const extendedColors={Winter:'#c9abff',Wind:'#ffa77b',Flood:'#56d8b2',Heat:'#f78167',Cold:'#68c3ff',Drought:'#c7a175',Fire:'#f68974',Rain:'#63d5ce',Other:'#b4d5dc'};
 const NS='http://www.w3.org/2000/svg', atlas=$('atlas'), cart=globalThis.WpcMap, map=cart.mount(atlas);
 const cacheZones=new Map();
 let shiftEdition=null;
@@ -23,14 +24,16 @@ function drawMetrics(){
  $('metrics').innerHTML=row('Flash flood warnings',ok?total(a.ffw_count):'Unavailable',ok&&a.ffe_count!=null?total(a.ffe_count)+' flash flood emergencies':'National NWS feed','alert','#a55126','#fff1e5',!ok||a.ffw_count==null)+
  row('Local storm reports',reportOk?total(currentReports(board).length):'Unavailable','Past 24 hours · preliminary','pin','#0f716b','#e3f3ee',!reportOk)+
  row('Day 1 rainfall risk',d?(d.highest_risk||'None delineated'):'Unavailable','Highest WPC outlook category','cloud','#2f6c9b','#e8f2fb',!d)+
- row('Population in outlook',band?compact(band.population):'Unavailable',band?band.risk+' Risk · all CONUS areas':'Day 1 WPC category estimate','people','#6b5394','#f1ecf8',!band);
+ row('WPC published population',band?compact(band.population):'Unavailable',band?band.risk+' Risk · all CONUS areas':'Day 1 WPC category estimate','people','#6b5394','#f1ecf8',!band);
 }
 function mapPopup(title,detail,link){
  $('map-pop').innerHTML='<button aria-label="Close map detail" id="close-pop">×</button><strong>'+esc(title)+'</strong>'+esc(detail)+(link?' &nbsp;'+ext(link,'Source'):'');$('map-pop').hidden=false;$('close-pop').onclick=()=>{$('map-pop').hidden=true};
 }
+function warningDetail(a){const record=board.impacts?.exposure?.alert_events?.[a.id];let note=a.area||a.states.join(', ');
+ if(record&&Date.parse(record.fresh_until)>Date.now()&&Date.parse(record.valid_end)>Date.now()&&record.status==='current'&&Number.isFinite(record.population)){note+=' · '+total(record.population)+' estimated residents in the '+(/zone/i.test(record.basis)?'issued warning zones':'warning footprint')+' (2020 Census).';}return note;}
 function drawPath(geometry,color,info,kind='forecast'){
  const d=cart.path(geometry);if(!d)return null;
- const el=node('path',{d,fill:color,'fill-opacity':kind==='alert'?'.2':'.57',stroke:color,'stroke-width':kind==='alert'?'1.7':'1.15','vector-effect':'non-scaling-stroke','fill-rule':'evenodd'},map.overlays);
+ const el=node('path',{d,fill:color,'fill-opacity':kind==='alert'?'.15':'.91',stroke:color,'stroke-width':kind==='alert'?'1.7':'1.15','vector-effect':'non-scaling-stroke','fill-rule':'evenodd'},map.overlays);
  if(info){const name=node('title',{},el);name.textContent=info[0];el.onclick=e=>{if(dragged)return;e.stopPropagation();mapPopup(...info);};}
  return el;
 }
@@ -43,25 +46,34 @@ function drawMap(){
   if(d){for(const f of [...d.features].sort((a,b)=>a.properties.rank-b.properties.rank))drawPath(f.geometry,riskColors[f.properties.risk],[f.properties.risk+' Risk · Day '+d.day,'Valid '+isoTime(d.valid_start,true)+' – '+isoTime(d.valid_end,true),refs.ero]);
    phase=Date.parse(d.valid_start)>Date.now()?'Upcoming period':'In effect';note='WPC issued '+isoTime(d.issued,true)+' · Valid '+isoTime(d.valid_start,true)+' – '+isoTime(d.valid_end,true)+'.';if(d.no_risk_area)note+=' WPC delineated no area at or above Marginal Risk.';
   }else note='This WPC outlook is unavailable or outside its verified validity.';
-  keys=Object.entries(riskColors).map(([k,c])=>legendItem(k,c)).join('');
+  keys=Object.entries(riskColors).filter(([k])=>k!=='High'||+prod.slice(-1)<=3).map(([k,c])=>legendItem(k,c)).join('');
  }else if(prod==='winter'){
   const w=activeWinter(board);
   if(w){for(const f of w.features)drawPath(f.geometry,winterColors[f.properties.impact]||'#cc9eee',[f.properties.impact+' winter impacts','WSSI Days 1–3 · through '+isoTime(w.valid_end,true),refs.winter]);note='Overall WSSI · Moderate and higher categories · '+isoTime(w.valid_start,true)+' – '+isoTime(w.valid_end,true)+'.';phase='CONUS';}else note='A current winter impact layer is unavailable.';
-  keys=Object.entries(winterColors).map(([k,c])=>legendItem(k,c)).join('');
+  keys=Object.entries(winterColors).filter(([k])=>['Moderate','Major','Extreme'].includes(k)).map(([k,c])=>legendItem(k,c)).join('');
  }else if(prod==='outlook'){
   const o=activeOutlook(board);if(o){const shown=[...o.features].sort((a,b)=>Number(b.properties.group==='soils')-Number(a.properties.group==='soils'));const groups=new Map();
-   for(const f of shown){const a=f.properties,c=extendedColors[a.family]||extendedColors.Other;groups.set(a.family,c);drawPath(f.geometry,c,[a.hazard+' · '+a.region,dayName(a.valid_start_date)+' – '+dayName(a.valid_end_date),a.source_url]);}
+   for(const f of shown){const a=f.properties,c=extendedColors[a.hazard]||'#9eacbe';groups.set(a.hazard,c);drawPath(f.geometry,c,[a.hazard+' · '+a.region,dayName(a.valid_start_date)+' – '+dayName(a.valid_end_date),a.source_url]);}
    keys=[...groups].map(([n,c])=>legendItem(n,c)).join('');phase='Extended outlook';note='WPC issued '+dayName(o.issued_date)+' · Individual forecast periods appear on selection.';}else note='The current medium-range hazards outlook is unavailable.';
+ }else if(['aviation','power','exposure','ground'].includes(prod)){const impact=impactOverlay(prod,board,map,legendItem,(...args)=>{if(!dragged)mapPopup(...args);},drawMap);({phase,keys,note}=impact);
  }else{phase='Current evidence';note='The map shows available alert polygons and preliminary storm report locations.';}
  if($('show-counties').checked&&counties)node('path',{d:counties,fill:'none',stroke:'#b9d2d6','stroke-width':'.35',opacity:'.58','vector-effect':'non-scaling-stroke','pointer-events':'none'},map.overlays);
- if($('show-alerts').checked){for(const a of currentAlerts(board))for(const g of a.geometry||[])drawPath(g,'#ffa76b',[a.title,a.area||a.states.join(', '),a.source_url],'alert');keys+=legendItem('Alert polygon',null,'key-outline');}
+ if($('show-alerts').checked){
+  const types=new Map();
+  for(const a of currentAlerts(board).slice().sort(alertDrawOrder))for(const g of a.geometry||[]){
+   const path=appendAlertPath(map.overlays,cart.path(g),a,{fill:prod==='none'});if(!path)continue;
+   path.onclick=e=>{if(dragged)return;e.stopPropagation();mapPopup(a.title,warningDetail(a),a.source_url);};
+   types.set(a.title,alertStyle(a).color);
+  }
+  keys+=[...types].map(([name,color])=>legendItem(name,color)).join('');
+ }
  if(selection){for(const g of selection.geometry||[])drawPath(g,'#ffe5ae',[selection.title,selection.role,selection.url],'alert');}
  if($('show-reports').checked){const rr=currentReports(board,24);for(const r of [...rr].reverse()){
   if(!Number.isFinite(r.lon)||!Number.isFinite(r.lat))continue;const xy=cart.project(r.lon,r.lat);if(!xy)continue;
   const el=node('circle',{cx:xy[0],cy:xy[1],r:r.impact_flags?.length?'4.5':'3.2',fill:r.impact_flags?.length?'#fff4a9':'#9af3e1',stroke:'#0f555a','stroke-width':'1.15','vector-effect':'non-scaling-stroke'},map.overlays);
   node('title',{},el).textContent=r.title+' · '+r.city+', '+r.state;el.onclick=e=>{if(dragged)return;e.stopPropagation();mapPopup(r.title+' · '+r.city+', '+r.state,isoTime(r.valid,true)+(r.impact_flags?.length?' · '+r.impact_flags.map(flagText).join(', '):''),r.source_url);};points.push(xy);
  }keys+=legendItem('24 h report',null,'key-dot');}
- $('map-phase').textContent=phase;$('map-legend').innerHTML=keys;$('map-foot').textContent=note+' Zone-based alerts without a drawn boundary appear in the alert list.';
+ $('map-phase').textContent=phase;$('map-legend').innerHTML=keys;$('map-foot').textContent=note+($('show-alerts').checked?' Zone-based alerts without a drawn boundary appear in the alert list.':'');if(prod==='power')$('map-foot').insertAdjacentHTML('beforeend',' '+ext(links.power,'Data from Power Out Map')+'.');
 }
 function pos(event){const rect=atlas.getBoundingClientRect();const p=atlas.createSVGPoint();p.x=event.clientX;p.y=event.clientY;const m=atlas.getScreenCTM();return m?p.matrixTransform(m.inverse()):{x:windowBox[0]+(event.clientX-rect.left)/rect.width*windowBox[2],y:windowBox[1]+(event.clientY-rect.top)/rect.height*windowBox[3]};}
 function boundedView(x,y,w){
@@ -78,7 +90,17 @@ atlas.addEventListener('keydown',e=>{const [x,y,w]=windowBox;if(e.key==='+'||e.k
 $('zoom-in').onclick=()=>zoom(.80);$('zoom-out').onclick=()=>zoom(1.25);$('zoom-reset').onclick=()=>{selection=null;boundedView(0,0,1000);$('map-pop').hidden=true;drawMap()};
 $('layers-btn').onclick=()=>{const p=$('layers-pop');p.hidden=!p.hidden;$('layers-btn').setAttribute('aria-expanded',String(!p.hidden));};
 document.addEventListener('click',e=>{if(!e.target.closest('.map-menu')){$('layers-pop').hidden=true;$('layers-btn').setAttribute('aria-expanded','false');}});
-$('product').onchange=()=>{selection=null;$('map-pop').hidden=true;drawMap()};
+let savedHazardLayers=null;
+function selectProduct(product,scroll=false){
+ $('product').value=product;selection=null;$('map-pop').hidden=true;
+ const impacts=['power','aviation','exposure','ground'].includes(product);
+ if(impacts&&!savedHazardLayers){savedHazardLayers=[$('show-reports').checked,$('show-alerts').checked];$('show-reports').checked=false;$('show-alerts').checked=false;}
+ if(!impacts&&savedHazardLayers){[$('show-reports').checked,$('show-alerts').checked]=savedHazardLayers;savedHazardLayers=null;}
+ if(product==='none'){$('show-reports').checked=true;$('show-alerts').checked=true;}
+ drawMap();if(scroll){$('map-stage').scrollIntoView?.({block:'center'});atlas.focus?.({preventScroll:true});}
+}
+$('product').onchange=()=>selectProduct($('product').value);
+for(const btn of document.querySelectorAll('[data-map-product]'))btn.onclick=()=>selectProduct(btn.dataset.mapProduct,true);
 for(const id of ['show-alerts','show-reports'])$(id).onchange=drawMap;
 $('show-counties').onchange=async()=>{if(!counties&&$('show-counties').checked){try{const r=await fetch('./assets/map-counties.json');if(!r.ok)throw Error();counties=(await r.json()).d;}catch{$('show-counties').checked=false;mapPopup('County overlay unavailable','Try again after refreshing the board.');}}drawMap();};
 atlas.addEventListener('click',e=>{if(dragged||!board)return;const st=e.target?.dataset?.state;if(st)mapPopup(cart.stateName(st),'Select a hazard polygon or report marker for source details.');});
@@ -118,7 +140,7 @@ $('evidence-table').onclick=async e=>{
  const btn=e.target.closest('.find-alert');if(!btn)return;const a=currentAlerts(board).find(x=>x.id===btn.dataset.id);if(!a)return;
  const epoch=++selectionEpoch;selection=null;const center=a.states.map(s=>cart.stateCenter(s)).find(Boolean);if(center)boundedView(center[0]-210,center[1]-124,420);
  if(a.geometry?.length)selection={title:a.title,geometry:a.geometry,role:'Issued NWS alert polygon.',url:a.source_url};
- drawMap();mapPopup(a.title,a.area||a.states.join(', '),a.source_url);$('map-stage').scrollIntoView({block:'center'});
+ drawMap();mapPopup(a.title,warningDetail(a),a.source_url);$('map-stage').scrollIntoView({block:'center'});
  if(!selection&&a.zone_urls?.length){const result=await resolveAlertZones(a,new Date(),fetch,cacheZones).catch(()=>null);if(epoch!==selectionEpoch)return;
   if(result?.geometry?.length){selection={title:a.title,geometry:result.geometry,role:result.role,url:a.source_url};drawMap();mapPopup(a.title,'NWS zone boundaries · '+(result.status==='ok'?'available':sourceState(result.status))+'. '+a.area,a.source_url);}
   else mapPopup(a.title,'The NWS zone footprint is unavailable. '+(a.area||''),a.source_url);
@@ -134,6 +156,21 @@ function drawSources(){
  $('sources-table').innerHTML=readableTable(['Source','Status','Latest issue / source time','Collection attempt','Product'],rows);
  const p=population(board);$('pop-source').innerHTML=p?'<p class="smallprint" style="margin:12px 0">'+esc(p.basis)+' · Issued '+esc(isoTime(p.issued,true))+'</p>'+readableTable(['Published category','Population','Area (mi²)'],p.bands.map(v=>[esc(v.risk),total(v.population),total(v.area_sq_mi)]))+ext(p.source_url,'Official exposure table'):'<p class="smallprint">A population table matching the current Day 1 issuance is unavailable.</p>';
 }
+function briefChoices(recordId=$('brief-footprint').value||'',bandId=$('brief-band').value||''){
+ const rows=exposureRecords(board);const choice=$('brief-footprint');
+ const option=(v,label)=>'<option value="'+esc(v)+'">'+esc(label)+'</option>';
+ choice.innerHTML=option('','Automatic for this hazard')+rows.map(r=>option(r.id,r.menuLabel||r.label)).join('');
+ choice.value=rows.some(r=>r.id===recordId)?recordId:'';
+ const bands=rows.find(r=>r.id===choice.value)?.bands||[];
+ $('brief-band-field').hidden=!bands.length;$('brief-band').innerHTML=option('','All mapped categories')+bands.map(b=>option(b.id,b.label)).join('');
+ $('brief-band').value=bands.some(b=>b.id===bandId)?bandId:'';
+}
+$('brief-footprint').onchange=()=>briefChoices($('brief-footprint').value,'');
+function useFootprint(record,band,state){
+ const family=String(record.family||'').toLowerCase();
+ $('brief-states').value=state||'';$('brief-wfos').value='';$('brief-family').value=[...$('brief-family').querySelectorAll('option')].some(o=>o.value===family)?family:'';
+ briefChoices(record.id,band?.id||'');location.hash='brief';$('brief-form').requestSubmit();
+}
 function drawBrief(){
  if(!board)return;const b=makeBrief(board,scope);const head='Draft for forecaster review · '+b.area+' · '+b.scope+' · '+b.window+' h of reports';
  const sections=b.sections.map(s=>'<section><h3>'+esc(s.title)+'</h3><ul>'+s.lines.map(t=>'<li>'+esc(t)+'</li>').join('')+'</ul></section>').join('');
@@ -143,13 +180,13 @@ function drawBrief(){
 $('brief-form').onsubmit=e=>{e.preventDefault();if(!board)return;try{const location=parseScope($('brief-states').value,$('brief-wfos').value);
  const supported=new Set([...officeCodes,...[...(board.sources.alerts?.events||[]),...(board.sources.reports?.events||[])].map(r=>r.wfo).filter(Boolean)]);
  if(location.wfos.some(w=>!supported.has(w)))throw Error('This code does not match the NWS forecast office directory. Check the identifier or use a state selection.');
- scope={...location,name:$('brief-name').value.trim(),family:$('brief-family').value,hours:Number($('brief-hours').value)};$('form-error').textContent='';drawBrief();$('copy-note').textContent='Brief generated.';}catch(err){$('form-error').textContent=err.message;}};
+ scope={...location,name:$('brief-name').value.trim(),family:$('brief-family').value,hours:Number($('brief-hours').value),exposure_id:$('brief-footprint').value||'',band_id:$('brief-band').value||''};$('form-error').textContent='';drawBrief();$('copy-note').textContent='Brief generated.';}catch(err){$('form-error').textContent=err.message;}};
 $('copy').onclick=async()=>{if(!board)return;drawBrief();try{await navigator.clipboard.writeText(briefText);$('copy-note').textContent='Brief and source links copied.';}catch{const r=document.createRange();r.selectNodeContents($('brief-output'));const s=getSelection();s.removeAllRanges();s.addRange(r);$('copy-note').textContent='The brief is selected. Use your browser’s Copy command.';}};
 $('print').onclick=()=>{if(board){drawBrief();print();}};
 function route(){const view=['brief','sources'].includes(location.hash.slice(1))?location.hash.slice(1):'board';for(const n of ['board','brief','sources'])$(n+'-view').hidden=n!==view;for(const a of document.querySelectorAll('[data-nav]')){if(a.dataset.nav===view)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}if(board){if(view==='brief')drawBrief();if(view==='sources')drawSources();}window.scrollTo(0,0);}
 window.addEventListener('hashchange',route);
-function render(){drawMetrics();drawMap();drawPriorities();drawTable();drawMessages();drawSources();drawBrief();const stale=Object.keys(labels).filter(k=>!['ok','partial'].includes(moduleState(board,k)));
- const status=$('sync-status');status.style.setProperty('--status',board.storage==='unavailable'||stale.length?'#b37825':'#168264');status.textContent=(board.mode==='reviewed_snapshot'?'Saved collection ':'Collection ')+isoTime(board.captured_at,true)+(stale.length?' · limited feeds':'');}
+function render(){renderImpacts(board,selectProduct,useFootprint);briefChoices();drawMetrics();drawMap();drawPriorities();drawTable();drawMessages();drawSources();drawBrief();const stale=Object.keys(labels).filter(k=>!['ok','partial'].includes(moduleState(board,k)));
+ const status=$('sync-status');const impacts=board.impacts||{};const limited=stale.length||!freshImpact(impacts.power,Date.now(),35)||!freshImpact(impacts.aviation,Date.now(),30)||!freshImpact(impacts.ground?.rivers,Date.now(),60);status.style.setProperty('--status',board.storage==='unavailable'||limited?'#e9ac4a':'#56cfb0');status.textContent=(board.mode==='reviewed_snapshot'?'Saved collection ':'Collection ')+isoTime(board.captured_at,true)+(limited?' · limited feeds':'');}
 async function refresh(){if(loading)return;loading=true;const b=$('refresh');b.disabled=true;try{const r=await fetch('./data/board.json?t='+Math.floor(Date.now()/120000),{cache:'no-store'});if(!r.ok)throw Error();const v=await r.json();if(v.schema!==1||!v.sources)throw Error();board=v;render();}catch{if(board)render();$('sync-status').textContent=board?'Refresh unavailable · saved '+isoTime(board.captured_at,true):'Unable to load briefing data';}finally{loading=false;b.disabled=false;}}
 $('refresh').onclick=refresh;
 function tick(){$('clock').textContent=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'}).toUpperCase()+'  /  '+isoTime(new Date());}

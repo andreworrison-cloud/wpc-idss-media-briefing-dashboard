@@ -15,7 +15,8 @@ COLLECTOR = 'https://wpc-impact-briefing.aorrison.chatgpt.site'
 SOURCES = {'alerts', 'reports', 'ero', 'winter', 'outlook', 'messages'}
 REPORT_FIELDS = set('id observation_id title family state states wfo city county valid issued lat lon magnitude unit qualifier trace impact_flags height_ft_agl height_estimated accumulation_hours preliminary revision revision_match source_url'.split())
 RAW_KEYS = {'remarks', 'reporter', 'reporter_name', 'reported_by', 'email', 'spreadsheetid', 'private_key', 'access_token', 'raw_rows', 'raw_text'}
-ASSETS = ('alert-zones.js', 'barlow.woff2', 'barlowcondensed-license.txt', 'desk.css', 'desk.js', 'dm-sans.woff2', 'dmsans-license.txt', 'logic.js', 'map-base.js', 'map-counties.json', 'mark.svg', 'offices.js')
+IMPACT_HOSTS = ('noaa.gov', 'weather.gov', 'iastate.edu', 'poweroutmap.com', 'poweroutage.us', 'ornl.gov', 'census.gov', 'faa.gov', 'flightaware.com', 'dot.gov', 'bts.gov')
+ASSETS = ('impact-logic.js','impacts.js','impact-map.js','hazard-palette.js','outage-map.js','outage-atlas.json','alert-zones.js', 'barlow.woff2', 'barlowcondensed-license.txt', 'desk.css', 'desk.js', 'dm-sans.woff2', 'dmsans-license.txt', 'logic.js', 'map-base.js', 'map-counties.json', 'mark.svg', 'offices.js')
 
 
 class FixedOrigin(HTTPRedirectHandler):
@@ -39,24 +40,26 @@ def stamp(value):
     return datetime.fromisoformat(value[:-1] + '+00:00')
 
 
-def review_fields(obj):
+def review_fields(obj, domains=('noaa.gov', 'weather.gov', 'iastate.edu')):
     if isinstance(obj, list):
         for member in obj:
-            review_fields(member)
+            review_fields(member, domains)
     elif isinstance(obj, dict):
         for key, value in obj.items():
             if key.lower() in RAW_KEYS:
                 raise ValueError('Unexpected raw or private field')
-            review_fields(value)
+            review_fields(value, domains)
     elif isinstance(obj, str):
         if 'docs.google.com/spreadsheets' in obj.lower() or 'BEGIN PRIVATE KEY' in obj:
             raise ValueError('Unexpected private source')
         if obj.startswith(('https://', 'http://')):
             target = urlsplit(obj)
             host = target.hostname or ''
-            allowed = any(host == end or host.endswith('.' + end) for end in ('noaa.gov', 'weather.gov', 'iastate.edu'))
+            allowed = any(host == end or host.endswith('.' + end) for end in domains)
+            if domains == IMPACT_HOSTS and host == 'services.arcgis.com':
+                allowed = target.path == '/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Aviation_Facilities/FeatureServer/0'
             if target.scheme != 'https' or not allowed or target.username or target.password:
-                raise ValueError('Unexpected public evidence URL')
+                raise ValueError(f'Unexpected public evidence domain {host}')
 
 
 def qualify(status, board, handoff, now):
@@ -116,7 +119,9 @@ def snapshots():
 
 
 def publish():
+    from impact_pipeline import collect_impacts
     board, handoff = snapshots()
+    board['impacts'] = collect_impacts(board, lambda data: review_fields(data, IMPACT_HOSTS))
     # Publish only the explicitly listed viewer files and approved snapshot documents.
     # Actions uploads the completed directory only after this script exits successfully.
     with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
@@ -132,6 +137,7 @@ def publish():
         if destination.exists():
             shutil.rmtree(destination)
         output.rename(destination)
+    print('Impact data: ' + ', '.join(f"{key} {value['status']}" for key, value in board['impacts'].items()), flush=True)
     print(f"IDSS revision {board['revision']} confirmed. " + ', '.join(f"{key} {board['health'][key]['status']}" for key in sorted(SOURCES)))
 
 
