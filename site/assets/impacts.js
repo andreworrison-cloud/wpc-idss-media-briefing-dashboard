@@ -1,4 +1,5 @@
 import {isoTime, safeURL, readable, refs} from './logic.js';
+import {ERO_COLORS} from './hazard-palette.js';
 import {links, countText, freshImpact, activeAirEvents, currentRivers, currentGroundReports, exposureRecords, residentCount, impactNames, recent} from './impact-logic.js';
 
 const byId=id=>document.getElementById(id);
@@ -17,7 +18,10 @@ function table(headers,rows) {
 }
 function extendedList(title,content) {return `<details class="impact-more"><summary>${esc(title)}</summary>${content}</details>`;}
 function unavailable(label,value) {return note((value?.status==='stale'||(value?.as_of&&!freshImpact(value)))?'The last '+label+' collection is stale. Current figures are unavailable.':'Current '+label+' figures are unavailable.');}
-const metric=(label,value,detail,iconName,product)=>`<article class="metric metric-${product}"><div class="metric-label">${esc(label)}</div><div class="symbol"><svg aria-hidden="true"><use href="#i-${iconName}"/></svg></div><strong>${esc(value)}</strong><span class="context">${esc(detail)}</span></article>`;
+function metric(label,value,detail,iconName,product,accent,extra='') {
+  return `<button type="button" class="metric metric-${product}" data-impact-layer="${product}" style="--metric-accent:${accent}" aria-label="Show ${esc(label.toLowerCase())} on the map" aria-pressed="false"><span class="metric-label">${esc(label)}</span><span class="symbol"><svg aria-hidden="true"><use href="#i-${iconName}"/></svg></span><strong>${esc(value)}</strong><span class="context">${esc(detail)}</span>${extra}</button>`;
+}
+
 const selected={record:'ero-d1',state:'',band:'',powerLevel:'county'};
 export function selectedExposure(board,now=Date.now()) {
   const recs=exposureRecords(board,now), record=recs.find(r=>r.id===selected.record)||recs[0];
@@ -25,16 +29,22 @@ export function selectedExposure(board,now=Date.now()) {
   return {record,band,state:selected.state,recs};
 }
 export const powerLevel=()=>selected.powerLevel;
-function metrics(board) {
+function metrics(board,onMap) {
   const {aviation:a,power:p,ground:g}=board.impacts||{};
   const rivers=g?.rivers,eventCount=activeAirEvents(a).length;
   const airCount=freshImpact(a,Date.now(),30)&&a.event_count!==null?new Set(activeAirEvents(a).map(e=>e.airport)).size:null;
   const day=exposureRecords(board).find(r=>r.id==='ero-d1');
   const topBand=(day?.bands||[]).filter(b=>b.population>0).sort((x,y)=>y.rank-x.rank)[0];
-  byId('impact-metrics').innerHTML=metric('Customers without power',short(freshImpact(p,Date.now(),35)?p.customers_out:null),'U.S. reporting utilities · all causes','power','power')+
-   metric('Airports with FAA notices',countText(airCount),airCount===null?'Current FAA programs unavailable':`${eventCount} active ${eventCount===1?'notice':'notices'} · National Airspace System`,'plane','aviation')+
-   metric(topBand?`Residents in ${topBand.label} Risk`:'Residents in Day 1 ERO',short(topBand?.population??day?.population),topBand?'Highest populated Day 1 category · 2020 Census':'2020 Census · forecast exposure','people','exposure')+
-   metric('Gauges in flood',countText(freshImpact(rivers,Date.now(),60)&&rivers.total!==null?currentRivers(rivers).length:null),'Minor, moderate or major · observed','ground','ground');
+  const riverSites=currentRivers(rivers);
+  const groundKey=freshImpact(rivers,Date.now(),60)&&rivers.total!==null ? `<span class="gauge-key">${['major','moderate','minor'].map(c=>`<span><i class="flood-${c}"></i>${riverSites.filter(r=>r.category===c).length} ${c}</span>`).join('')}</span>`:'';
+  const outageLeader=freshImpact(p,Date.now(),35)&&p.states_status==='current'&&recent(p.states_as_of,Date.now(),35)?p.states?.find(s=>s.customers_out>0):null;
+  const leadAir=activeAirEvents(a).find(e=>e.delay);
+  byId('impact-metrics').innerHTML=metric('Customers without power',short(freshImpact(p,Date.now(),35)?p.customers_out:null),outageLeader?`Largest state count: ${outageLeader.name} · ${countText(outageLeader.customers_out)}`:'U.S. reporting utilities · all causes','power','power','#FEC65B')+
+   metric('Airports with FAA notices',countText(airCount),leadAir?`${leadAir.airport} · ${leadAir.label.toLowerCase()} · ${leadAir.delay}`:airCount===null?'Current FAA programs unavailable':`${eventCount} active ${eventCount===1?'notice':'notices'}`,'plane','aviation','#8ACBFF')+
+   metric(topBand?`Residents in ${topBand.label} Risk`:'Residents in Day 1 ERO',short(topBand?.population??day?.population),topBand?'Day 1 excessive rainfall · 2020 Census':'2020 Census · forecast exposure','people','exposure',ERO_COLORS[topBand?.label]||'#9fddd7')+
+   metric('Gauges in flood',countText(freshImpact(rivers,Date.now(),60)&&rivers.total!==null?riverSites.length:null),groundKey?'Observed flood stage':'NWPS · last six hours','ground','ground','#92b8df',groundKey);
+  for(const btn of document.querySelectorAll('[data-impact-layer]'))btn.onclick=()=>onMap(btn.dataset.impactLayer,true);
+
 }
 function powerPanel(p,onMap) {
   const target=byId('power-panel');
@@ -108,4 +118,4 @@ function sources(data){
   const nodes=[['Electric utility outages',data.power,'as_of',links.power,'Power Out Map'],['Airport programs and delays',data.aviation,'as_of',links.aviation,'FAA NAS Status'],['Resident exposure',data.exposure,'calculated_at',links.census,'U.S. Census Bureau'],['Observed river stages',data.ground?.rivers,'asOf',links.rivers,'NOAA NWPS'],['Reports of ground impacts',data.ground?.reports,'asOf',links.reports,'NWS via IEM']];
   byId('impact-source-rows').innerHTML=table(['Impact source','Status','Source or calculation time','Evidence'],nodes.map(([label,v,key,link,by])=>[esc(label),esc(v?(freshImpact(v,Date.now(),key==='asOf'?60:35)?readable(v.status):'Stale / unavailable'):'Unavailable'),esc(when(v?.[key])),url(link,by)]));
 }
-export function renderImpacts(board,onMap,openBrief){metrics(board);const d=board.impacts||{};powerPanel(d.power,onMap);airPanel(d.aviation);exposurePanel(board,onMap,openBrief);groundPanel(d.ground);sources(d);}
+export function renderImpacts(board,onMap,openBrief){metrics(board,onMap);const d=board.impacts||{};powerPanel(d.power,onMap);airPanel(d.aviation);exposurePanel(board,onMap,openBrief);groundPanel(d.ground);sources(d);}

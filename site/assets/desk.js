@@ -41,6 +41,7 @@ function legendItem(name,color,cls='key-square'){return '<span><i class="'+cls+'
 function drawMap(){
  if(!board)return;map.overlays.replaceChildren();points.length=0;
  const prod=$('product').value;let keys='',note='',phase='';
+ for(const btn of document.querySelectorAll('[data-impact-layer]'))btn.setAttribute('aria-pressed',String(btn.dataset.impactLayer===prod));
  if(prod.startsWith('ero')){
   const d=activeDay(board,+prod.slice(-1));
   if(d){for(const f of [...d.features].sort((a,b)=>a.properties.rank-b.properties.rank))drawPath(f.geometry,riskColors[f.properties.risk],[f.properties.risk+' Risk · Day '+d.day,'Valid '+isoTime(d.valid_start,true)+' – '+isoTime(d.valid_end,true),refs.ero]);
@@ -105,7 +106,7 @@ for(const id of ['show-alerts','show-reports'])$(id).onchange=drawMap;
 $('show-counties').onchange=async()=>{if(!counties&&$('show-counties').checked){try{const r=await fetch('./assets/map-counties.json');if(!r.ok)throw Error();counties=(await r.json()).d;}catch{$('show-counties').checked=false;mapPopup('County overlay unavailable','Try again after refreshing the board.');}}drawMap();};
 atlas.addEventListener('click',e=>{if(dragged||!board)return;const st=e.target?.dataset?.state;if(st)mapPopup(cart.stateName(st),'Select a hazard polygon or report marker for source details.');});
 function drawPriorities(){
- const cards=priorities(board);$('priorities').innerHTML=cards.length?cards.map(s=>'<article class="story" style="--accent:'+s.color+'"><div class="story-top">'+esc(s.tag)+'</div><h3>'+esc(s.title)+'</h3><p>'+esc(s.body.length>185?s.body.slice(0,182)+'…':s.body)+'</p><div class="story-action">'+ext(s.link,s.label)+'</div></article>').join(''):empty('No priority item can be verified from the current source collection.');
+ const cards=priorities(board);$('priorities').innerHTML=cards.length?cards.map(s=>'<article class="story" style="--hazard-color:'+(s.tag==='Active warning'?alertStyle(s.title.split(' · ')[0]).color:s.tag==='Observed impact'?'#71e0ca':'#82c6fa')+'"><div class="story-top">'+esc(s.tag)+'</div><h3>'+esc(s.title)+'</h3><p>'+esc(s.body.length>185?s.body.slice(0,182)+'…':s.body)+'</p><div class="story-action">'+ext(s.link,s.label)+'</div></article>').join(''):empty('No priority item can be verified from the current source collection.');
 }
 async function loadShift(){
  try{const r=await fetch('./data/handoff.json?t='+Math.floor(Date.now()/120000),{cache:'no-store'});if(r.ok){shiftEdition=(await r.json()).edition;if(board)drawMessages();}}catch{}

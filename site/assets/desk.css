@@ -492,3 +492,22 @@ noscript { display: block; padding: 12px var(--pad); background: white; color: #
   .brief-paper a { color: black; }
 }
 .use-footprint { margin-top: .85rem; }
+.impact-metrics button.metric { appearance: none; border: 0; border-top: 3px solid var(--metric-accent); border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.impact-metrics button.metric:hover, .impact-metrics button.metric[aria-pressed="true"] { background: #1d3957; }
+.impact-metrics button.metric:focus-visible { outline-offset: -3px; }
+.impact-metrics .metric .symbol { color: var(--metric-accent); }
+.impact-metrics { border-top-width: 0; }
+.gauge-key { display: flex; flex-wrap: wrap; grid-column: 1 / -1; gap: 1px 8px; }
+.gauge-key span { display: inline-flex; align-items: center; gap: 4px; color: #e4edf4; font-size: 12px; }
+.gauge-key i { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 1px #7992ab; }
+.flood-major { background: #cc33ff; } .flood-moderate { background: #ff0000; } .flood-minor { background: #ff9900; }
+@media(max-width:850px) {
+  .board-grid, .impact-grid, .bottom-grid, .brief-grid { grid-template-columns: minmax(0,1fr); }
+  .shell, .operations, .workspace, .section-header, .map-panel, .impact-body, .impact-more, .brief-form label { min-width: 0; }
+}
+@media(max-width:700px) {
+  .mast-in { grid-template-columns: minmax(0,1fr) auto; }
+  .mast, .operations, .workspace, footer { overflow-x: clip; }
+  .gauge-key { gap: 1px 5px; } .gauge-key span { font-size: 11px; }
+  .impact-metrics .metric:nth-child(n+3) { border-top: 3px solid var(--metric-accent); }
+}
