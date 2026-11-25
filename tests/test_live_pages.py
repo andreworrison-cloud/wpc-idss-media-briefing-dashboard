@@ -8,6 +8,7 @@ class PublicReleaseTests(unittest.TestCase):
     def setUp(self):
         self.revision = '2026-11-24T22:24:07.510Z'
         self.board = {'schema': 1, 'revision': self.revision, 'sources': dict.fromkeys(SOURCES),
+                      'weather': {name:{'status':'current'} for name in ('radar','mpd','winter','observations')},
                       'impacts':dict.fromkeys(('aviation','power','ground','exposure')), 'health': {source: {'status':'ok'} for source in SOURCES}}
         self.home = b'<html>Briefing board</html>'
 

@@ -19,6 +19,12 @@ def validate_release(html, board, expected_html, revision):
         raise ValueError('The public release has an unexpected source inventory')
     if set(board.get('impacts', {})) != {'aviation','power','ground','exposure'}:
         raise ValueError('The public release is missing its impact data')
+    weather = board.get('weather') or {}
+    if set(weather) != {'radar', 'mpd', 'winter', 'observations'} or not all(
+        isinstance(item, dict) and item.get('status') in {'ok', 'current', 'none', 'partial', 'stale', 'unavailable'}
+        for item in weather.values()
+    ):
+        raise ValueError('The public release is missing its geographic layer inventory')
 
 
 def read(url):

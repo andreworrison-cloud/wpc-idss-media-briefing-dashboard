@@ -299,3 +299,27 @@ class Benchmarks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MapLayerExposureTests(unittest.TestCase):
+    def test_zone_watch_union_and_missing_code(self):
+        from weather_exposure import winter_issuances
+        events = [dict(id=name, event='Winter Storm Watch', effective=PAST, valid_end=END, states=['AL'],
+                       ugc=[code], zone_urls=['https://api.weather.gov/zones/forecast/'+code])
+                  for name,code in [('a','ALZ001'),('b','ALZ002')]]
+        centers = toy_centers()
+        rows = winter_issuances(centers, events, {'ALZ001':[0,1],'ALZ002':[1,2]}, STAMP, NOW)
+        self.assertEqual((len(rows), rows[0]['population']), (1,60))
+        partial = winter_issuances(centers, events, {'ALZ001':[0,1]}, STAMP, NOW)[0]
+        self.assertEqual((partial['status'],partial['population'],partial['mapped_population']), ('partial',None,30))
+
+    def test_future_or_expired_mpd_cannot_contribute_residents(self):
+        from weather_exposure import discussions
+        props = dict(number='0042', valid_start=PAST, valid_end=END, source_url='https://www.wpc.ncep.noaa.gov/')
+        layer = dict(status='current', checked_at=STAMP, fresh_until=END, features=[
+            dict(geometry=polygon(box(0,0,1.2,1.2)),properties=props),
+            dict(geometry=polygon(box(0,0,5,5)),properties={**props,'valid_start':END}),
+            dict(geometry=polygon(box(0,0,5,5)),properties={**props,'valid_end':PAST})])
+        rows = discussions(toy_centers(), layer, NOW)
+        self.assertEqual([(r['id'],r['population']) for r in rows], [('mpd-0042',30)])
+        self.assertFalse(discussions(toy_centers(),{**layer,'fresh_until':PAST},NOW))

@@ -1,0 +1,16 @@
+.wpc-outage-tip.leaflet-tooltip,.wpc-outage-pop .leaflet-popup-content-wrapper,.wpc-outage-pop .leaflet-popup-tip,.wpc-outage-key{color:#172e3c;background:#fff;border-radius:5px}
+.wpc-outage-tip.leaflet-tooltip{padding:9px 12px;border:1px solid #9dabb3;box-shadow:0 2px 10px #0a243127;white-space:normal}
+.wpc-outage-pop .leaflet-popup-content{margin:15px 20px 14px 16px}
+.wpc-outage-card,.wpc-outage-key{font:12px/1.35 "DM Sans","Segoe UI",Arial,sans-serif}
+.wpc-outage-card{display:grid;gap:4px;min-width:145px;max-width:248px}
+.wpc-outage-title{font-weight:750;font-size:14px;color:#16364a}
+.wpc-outage-value{font-weight:700;color:#4e3923}
+.wpc-outage-time,.wpc-outage-meta{font-size:11px;color:#475e6d;line-height:1.35}
+.wpc-outage-card .wpc-outage-credit{justify-self:start;font-weight:600;font-size:11px;color:#165d83;text-decoration:underline}
+.wpc-outage-drill{justify-self:start;cursor:pointer;min-height:32px;padding:3px 9px;border:1px solid #afc0ca;background:#f0f5f7;border-radius:3px;color:#15455d;font:inherit;font-weight:650}
+.wpc-outage-key{max-width:min(350px,74vw);padding:8px 10px;box-shadow:0 1px 5px #0b263237;border:1px solid #aab9c1}
+.wpc-outage-keyhead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.wpc-outage-keyhead select{font:inherit;color:#213946;min-height:25px}
+.wpc-outage-bins{display:flex;flex-wrap:wrap;gap:3px 8px;margin-top:4px}
+.wpc-outage-bins span{display:inline-flex;align-items:center;gap:3px;font-size:10px}
+.wpc-outage-bins i{display:inline-block;width:12px;height:8px;border:1px solid #52667366}

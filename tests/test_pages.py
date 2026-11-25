@@ -83,13 +83,13 @@ class PagesTests(unittest.TestCase):
                     if key in ('src', 'href') and value and not value.startswith(('#','https:')):
                         self.links.append(value)
         parser = References(); parser.feed((ROOT/'index.html').read_text())
-        css = (ROOT/'assets/desk.css').read_text()
         self.assertGreaterEqual(len(parser.links), 4)
         refs = [('index.html', url) for url in parser.links]
-        for url in re.findall(r'url\(([^)]+)\)', css):
-            target = url.strip("'\"")
-            if not target.startswith('data:'):
-                refs.append(('assets/desk.css', target))
+        for stylesheet in (ROOT/'assets').rglob('*.css'):
+            for raw in re.findall(r'url\(([^)]+)\)', stylesheet.read_text()):
+                target = raw.strip(chr(39) + chr(34))
+                if not target.startswith(('data:', '#', 'https:')):
+                    refs.append((str(stylesheet.relative_to(ROOT)),target))
         for js in (ROOT/'assets').glob('*.js'):
             refs += [('assets/'+js.name, url) for url in re.findall(r"from ['\"]([^'\"]+)['\"]", js.read_text())]
         root = 'https://example.github.io/one-project/'
@@ -97,7 +97,7 @@ class PagesTests(unittest.TestCase):
             resolved = urljoin(root + filename, url)
             self.assertTrue(resolved.startswith(root), resolved)
             self.assertTrue((ROOT/urlsplit(resolved).path.removeprefix('/one-project/')).is_file(), f'{filename} → {url} → {resolved}')
-        self.assertEqual(set(ASSETS), {p.name for p in (ROOT/'assets').iterdir()})
+        self.assertEqual(set(ASSETS), {str(p.relative_to(ROOT/'assets')) for p in (ROOT/'assets').rglob('*') if p.is_file()})
 
     def test_dedicated_workflow_has_no_cross_repository_trigger(self):
         workflow = (ROOT/'.github/workflows/publish.yml').read_text()
@@ -105,7 +105,7 @@ class PagesTests(unittest.TestCase):
         self.assertNotIn('wpc-hydro-dashboard', workflow)
         self.assertIn('workflow_dispatch:', workflow)
         self.assertIn('7,17,27,37,47,57 * * * *', workflow)
-        js = (ROOT/'assets/desk.js').read_text()
+        js = (ROOT/'assets/briefing.js').read_text()
         self.assertIn("readRelease('board')", js)
         self.assertIn("readRelease('handoff')", js)
         self.assertNotIn("fetch('/api/", js)

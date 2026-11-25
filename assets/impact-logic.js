@@ -19,6 +19,41 @@ export function freshImpact(value, now = Date.now(), minutes = 45) {
 export const activeAirEvents = (a, now = Date.now()) => freshImpact(a, now, 30) ? (a.events || []).filter(e => (!e.start_utc || Date.parse(e.start_utc) <= now) && (!e.end_utc || Date.parse(e.end_utc) > now)) : [];
 export const currentRivers = (r, now = Date.now()) => freshImpact(r,now,60) ? (r.sites || []).filter(s => recent(s.observedAt,now,60 * r.periodHours)) : [];
 export const currentGroundReports = (r, now = Date.now()) => freshImpact(r,now,60) ? (r.items || []).filter(s => recent(s.observedAt,now,60 * r.periodHours)) : [];
+export function publicWeatherEvidence(weather, scope, now, cite, time) {
+  const discussions = [], winter = [];
+  if (!weather) return {discussions, winter};
+  const inArea = (states=[], office='') => (!scope.states.length || states.some(s=>scope.states.includes(s))) &&
+    (!scope.wfos.length || scope.wfos.includes(String(office).toUpperCase().replace(/^[KPT](?=[A-Z]{3}$)/,'')));
+  const mpd=weather.mpd, t=mpd?.checked_at;
+  if (mpd && ['current','ok','partial'].includes(mpd.status) && recent(t,now,30) && Date.parse(mpd.fresh_until)>now &&
+      (!scope.family || scope.family==='flood')) {
+    for (const f of mpd.features||[]) {
+      const p=f.properties||{};
+      if (!(Date.parse(p.valid_start)<=now && Date.parse(p.valid_end)>now) ||
+          (scope.states.length && !scope.states.some(s=>(p.states||[]).includes(s))) ||
+          (scope.wfos.length && !scope.wfos.some(w=>(p.wfos||[]).includes(w)))) continue;
+      discussions.push('WPC Mesoscale Precipitation Discussion '+p.number+(p.areas?' covers '+p.areas:' is in effect')+
+        (p.tag?' ('+p.tag+')':'')+' through '+time(p.valid_end,true)+'.'+cite('WPC MPD '+p.number,p.source_url));
+      if (discussions.length===2)break;
+    }
+  }
+  const al = weather.winter?.layers?.find(l=>l.id==='winter_alerts');
+  if (al && ['ok','current','partial'].includes(al.status) && recent(al.retrieved_at||weather.winter.retrieved_at,now,30) &&
+      (!scope.family || ['winter','cold'].includes(scope.family))) {
+    const seen = new Set();
+    for (const e of al.events||[]) {
+      const name=e.event||e.title, s=e.states||[];
+      if (!name || (scope.family==='cold' && !/cold|chill|freeze|frost/i.test(name)) ||
+          !(Date.parse(e.effective||e.valid_start)<=now && Date.parse(e.valid_end||e.expires)>now) ||
+          !inArea(s,e.wfo||e.office)||seen.has(name)) continue;
+      seen.add(name);
+      winter.push(name+(e.area?' for '+e.area:s.length?' for portions of '+s.join(', '):'')+
+        ' through '+time(e.valid_end||e.expires,true)+'.'+cite(name,e.source_url));
+      if(winter.length===2)break;
+    }
+  }
+  return {discussions, winter};
+}
 export function exposureRecords(board, now = Date.now()) {
   const exposure = board?.impacts?.exposure;
   if (!exposure || !recent(exposure.calculated_at,now,50)) return [];

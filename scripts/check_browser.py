@@ -1,4 +1,4 @@
-"""Exercise the deployed command center with the runner's Chrome WebDriver."""
+"""Exercise the public map, observations, briefing and phone layout in Chrome."""
 import base64
 import json
 import shutil
@@ -41,32 +41,76 @@ def check(url):
         def snap(name):
             target=Path('browser-check');target.mkdir(exist_ok=True)
             (target/(name+'.png')).write_bytes(base64.b64decode(api(prefix+'/screenshot')))
-        api(prefix+'/url',{'url':url})
-        wait("document.querySelectorAll('#impact-metrics .metric').length===4 && document.querySelector('#atlas .wm-state')",'Impact indicators and national map')
-        wait("document.getElementById('aviation-panel').textContent.includes('FlightAware') && document.getElementById('power-panel').textContent.includes('Power Out Map')",'Attribution and flight totals')
-        snap('command-center-desktop')
-        for product in ('power','aviation','ground','exposure'):
-            js(f"document.querySelector('[data-map-product={product}]').click()")
-            wait(f"document.querySelector('#product').value==='{product}' && document.querySelector('#map-foot').textContent.length>20",product+' map')
-            if product=='power':
-                wait("document.querySelector('[data-outage-overlay=county]') || /unavailable/.test(document.querySelector('#map-foot').textContent)",'County heatmap')
-                if js("return !!document.querySelector('[data-outage-overlay=county]')"):
-                    wait("document.querySelectorAll('[data-power-fips]').length>3000",'County coverage')
-                    snap('outage-heatmap')
+        def select(id_, value):
+            js(f"const e=document.getElementById({json.dumps(id_)}); e.value={json.dumps(value)}; e.dispatchEvent(new Event('change',{{bubbles:true}}))")
+        def click_product(name):
+            if js(f"return !!document.querySelector('[data-product={name}]')"):
+                js(f"document.querySelector('[data-product={name}]').click()")
+            else:
+                select('product',name)
+            wait(f"document.querySelector('#product').value==='{name}'", name+' choice')
+        api(prefix+'/url', {'url':url})
+        wait("document.querySelector('#atlas.leaflet-container[data-zoom]') && document.querySelector('#impact-metrics button')", 'Geographic map and impact figures')
+        wait("document.querySelector('#winter-layer option[value=wssi_d1]') && document.querySelector('#report-table')", 'Public weather inventory')
+        assert js("return document.title")== 'WPC IDSS and Media Briefing Dashboard'
+        assert js("return document.querySelectorAll('#zoom-in').length===1 && !document.querySelector('#atlas .leaflet-control-zoom')")
+        api(prefix+'/execute/async', {'script':"const done=arguments[arguments.length-1]; import('./assets/release.js').then(m=>m.readRelease('board')).then(b=>{window.qaWeather=b.weather;done(true)},()=>done(false));",'args':[]})
+        wait("window.qaWeather && document.querySelector('[data-testid=idss-states]')", 'Geographic reference')
+        if js("return qaWeather.radar.status==='current' && Date.parse(qaWeather.radar.fresh_until)>Date.now()"):
+            wait("document.querySelector('[data-testid=idss-radar-raster]')?.naturalWidth>0", 'Time-labeled radar image loads in Chrome')
+        snap('briefing-desktop')
+        old = js("return Number(document.querySelector('#atlas').dataset.zoom)")
+        js("document.querySelector('#zoom-in').click()")
+        wait(f"Number(document.querySelector('#atlas').dataset.zoom)>{old}",'Incremental zoom button')
+        assert 0 < js("return Number(document.querySelector('#atlas').dataset.zoom)")-old <= .5
+        old = js("return Number(document.querySelector('#atlas').dataset.zoom)")
+        js("const e=document.querySelector('#atlas'), b=e.getBoundingClientRect();e.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:-100,deltaMode:0,clientX:b.left+b.width/2+20,clientY:b.top+b.height/2}));")
+        wait(f"Number(document.querySelector('#atlas').dataset.zoom)>{old}", 'Cursor wheel zoom')
+        assert js("return Number(document.querySelector('#atlas').dataset.zoom)")-old <= .5
+        select('region','AK')
+        wait("Number(document.querySelector('#atlas').dataset.centerLat)>52", 'Alaska geography')
+        select('region','CONUS')
+        click_product('winter')
+        select('winter-layer','winter_alerts')
+        if js("return qaWeather.winter.layers?.find(x=>x.id==='winter_alerts')?.features?.some(f=>Date.parse(f.properties.valid_end)>Date.now())"):
+            wait("document.querySelector('[data-testid=idss-winter-zone]')", 'NWS winter issuance boundaries')
+        select('winter-layer','wssi_d1')
+        if js("return qaWeather.winter.layers?.find(x=>x.id==='wssi_d1')?.status==='ok'"):
+            wait("document.querySelector('[data-testid=idss-wssi]')", 'Day 1 WSSI contours')
+        snap('winter-weather')
+        click_product('mpd')
+        wait("/discussion|MPD/i.test(document.querySelector('#map-foot').textContent)", 'MPD status, including quiet periods')
+        click_product('observations')
+        if js("return qaWeather.observations.features?.length>0"):
+            wait("document.querySelector('[data-testid=idss-report-glyph]')", 'Observation map symbols')
+            js("const e=document.querySelector('#atlas [data-observation-id]'); e.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,clientX:100,clientY:100}));")
+            wait("document.querySelector('[data-testid=idss-geo-tooltip]')?.textContent.includes('UTC')", 'Observation hover includes time and location')
+            wait("/Local Storm Report|Public Information Statement/i.test(document.querySelector('[data-testid=idss-geo-tooltip]').textContent)", 'Report source on hover')
+            snap('observation-hover')
+            if js("return qaWeather.observations.features.some(r=>r.sourceType==='PNS')"):
+                select('report-source','PNS')
+                wait("document.querySelector('#report-table tbody tr a')?.textContent.includes('PNS')", 'PNS measurement filter and source link')
+                js("document.querySelector('#report-table [data-report]').click()")
+                wait("document.querySelector('[data-testid=idss-geo-popup]') || !document.querySelector('#map-detail').hidden", 'Locate the selected observation')
+        click_product('power')
+        wait("document.querySelector('#atlas canvas') || /unavailable|unverified/i.test(document.querySelector('#map-foot').textContent)", 'Geographic outage display or explicit source status')
+        select('region','CONUS')
+        snap('utility-outages')
         js("location.hash='brief'")
-        wait("!document.querySelector('#brief-view').hidden && document.querySelector('#brief-output').textContent.includes('Source evidence')",'Media brief')
+        wait("!document.querySelector('#brief-view').hidden && document.querySelector('#brief-output a[href^=https]')", 'Source-linked media brief')
         js("document.querySelector('#brief-states').value='FL';document.querySelector('#brief-form').requestSubmit()")
         wait("document.querySelector('#brief-output').textContent.includes('FL') && !document.querySelector('#form-error').textContent",'State-scoped brief')
-        js("location.hash='board';document.getElementById('product').value='ero1';document.getElementById('product').dispatchEvent(new Event('change'));window.scrollTo(0,0)")
+        js("location.hash='board';document.querySelector('[data-product=radar]').click();window.scrollTo(0,0)")
         api(prefix+'/goog/cdp/execute', {'cmd':'Emulation.setDeviceMetricsOverride','params':{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True}})
-        wait("!document.getElementById('board-view').hidden",'Return to command center')
-        snap('command-center-phone')
-        print('Phone widths',js('return [window.innerWidth,document.documentElement.clientWidth,document.documentElement.scrollWidth]'),flush=True)
-        print('Visible controls outside viewport',js("return [...document.querySelectorAll('main button,main select,header a, .shell,.panel')].filter(e=>e.getClientRects().length&&e.getBoundingClientRect().right>391&&!e.closest('.scroll-table')).slice(0,12).map(e=>[e.tagName,e.id,e.className,Math.round(e.getBoundingClientRect().right)])"),flush=True)
-        wait("document.documentElement.scrollWidth<=392 && document.documentElement.clientWidth<=392",'Phone viewport')
-        wait("[...document.querySelectorAll('header nav a')].every(a=>a.getBoundingClientRect().left>=0 && a.getBoundingClientRect().right<=390)",'Mobile navigation links')
-        snap('command-center-phone')
-        print('Passed desktop, county heatmap, airport/ground/exposure layers, state brief and phone layout.')
+        wait("!document.querySelector('#board-view').hidden && document.documentElement.scrollWidth<=392 && document.documentElement.clientWidth<=392",'Phone viewport')
+        select('region','CONUS')
+        snap('briefing-phone')
+        print('Verified map, quarter-step zoom, radar, winter layers, MPDs, measured report hover, outage map, state brief and phone layout.')
+    except Exception:
+        if 'prefix' in locals():
+            snap('check-failure')
+            print('Map diagnostic',js("return [location.hash,document.title,document.querySelector('#product')?.value,document.querySelector('#atlas')?.dataset.zoom,document.querySelector('#map-foot')?.textContent,document.querySelector('#map-notice')?.textContent,document.querySelector('#sync-status')?.textContent,document.querySelector('#form-error')?.textContent]"),flush=True)
+        raise
     finally:
         driver.terminate();driver.wait(timeout=6)
 

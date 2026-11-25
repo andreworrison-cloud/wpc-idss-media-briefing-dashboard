@@ -4,6 +4,7 @@ import re
 import shutil
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import URLError
@@ -16,7 +17,19 @@ SOURCES = {'alerts', 'reports', 'ero', 'winter', 'outlook', 'messages'}
 REPORT_FIELDS = set('id observation_id title family state states wfo city county valid issued lat lon magnitude unit qualifier trace impact_flags height_ft_agl height_estimated accumulation_hours preliminary revision revision_match source_url'.split())
 RAW_KEYS = {'remarks', 'reporter', 'reporter_name', 'reported_by', 'email', 'spreadsheetid', 'private_key', 'access_token', 'raw_rows', 'raw_text'}
 IMPACT_HOSTS = ('noaa.gov', 'weather.gov', 'iastate.edu', 'poweroutmap.com', 'poweroutage.us', 'ornl.gov', 'census.gov', 'faa.gov', 'flightaware.com', 'dot.gov', 'bts.gov')
-ASSETS = ('release.js','impact-logic.js','impacts.js','impact-map.js','hazard-palette.js','outage-map.js','outage-atlas.json','alert-zones.js', 'barlow.woff2', 'barlowcondensed-license.txt', 'desk.css', 'desk.js', 'dm-sans.woff2', 'dmsans-license.txt', 'logic.js', 'map-base.js', 'map-counties.json', 'mark.svg', 'offices.js')
+WEATHER_HOSTS = ('noaa.gov', 'weather.gov', 'iastate.edu')
+ASSETS = (
+    'alert-zones.js', 'barlow.woff2', 'barlowcondensed-license.txt', 'briefing.css', 'briefing.js',
+    'command-map.css', 'command-map.js', 'conus-reference.webp', 'county-reference.js', 'dm-sans.woff2',
+    'dmsans-license.txt', 'geo-reference.json', 'geographic-base.js', 'hazard-palette.js', 'impact-logic.js',
+    'impacts.js', 'leaflet/LICENSE', 'leaflet/images/layers-2x.png', 'leaflet/images/layers.png',
+    'leaflet/images/marker-icon-2x.png', 'leaflet/images/marker-icon.png',
+    'leaflet/images/marker-shadow.png', 'leaflet/leaflet.css', 'leaflet/leaflet.js',
+    'leaflet/leaflet.js.map', 'logic.js', 'map-points.js', 'mark.svg', 'observed-graphics.js', 'offices.js',
+    'outage-geo-central.json', 'outage-geo-islands.json', 'outage-geo-northeast.json',
+    'outage-geo-south.json', 'outage-geo-southeast.json', 'outage-geo-states.json', 'outage-geo-west.json',
+    'outage-layer.css', 'outage-layer.js', 'release.js',
+)
 
 
 class FixedOrigin(HTTPRedirectHandler):
@@ -40,15 +53,15 @@ def stamp(value):
     return datetime.fromisoformat(value[:-1] + '+00:00')
 
 
-def review_fields(obj, domains=('noaa.gov', 'weather.gov', 'iastate.edu')):
+def review_fields(obj, domains=('noaa.gov', 'weather.gov', 'iastate.edu'), hydro=False):
     if isinstance(obj, list):
         for member in obj:
-            review_fields(member, domains)
+            review_fields(member, domains, hydro)
     elif isinstance(obj, dict):
         for key, value in obj.items():
             if key.lower() in RAW_KEYS:
                 raise ValueError('Unexpected raw or private field')
-            review_fields(value, domains)
+            review_fields(value, domains, hydro)
     elif isinstance(obj, str):
         if 'docs.google.com/spreadsheets' in obj.lower() or 'BEGIN PRIVATE KEY' in obj:
             raise ValueError('Unexpected private source')
@@ -56,6 +69,12 @@ def review_fields(obj, domains=('noaa.gov', 'weather.gov', 'iastate.edu')):
             target = urlsplit(obj)
             host = target.hostname or ''
             allowed = any(host == end or host.endswith('.' + end) for end in domains)
+            if hydro and host in {'andreworrison-cloud.github.io','raw.githubusercontent.com','github.com','api.github.com'}:
+                prefix = {'andreworrison-cloud.github.io': '/wpc-hydro-dashboard/', 'api.github.com': '/repos/andreworrison-cloud/wpc-hydro-dashboard/'}.get(host, '/andreworrison-cloud/wpc-hydro-dashboard/')
+                allowed = target.path.startswith(prefix) and not set(target.path.split('/')).intersection({'..','.'})
+            if hydro and host in {'noaa-mrms-pds.s3.amazonaws.com', 'noaa-mrms-pds.s3.us-east-1.amazonaws.com', 's3.amazonaws.com'}:
+                prefix = '/noaa-mrms-pds/' if host == 's3.amazonaws.com' else '/'
+                allowed = target.path.startswith(prefix + 'CONUS/ReflectivityAtLowestAltitude_00.50/') and target.path.endswith('.grib2.gz')
             if domains == IMPACT_HOSTS and host == 'services.arcgis.com':
                 allowed = target.path == '/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Aviation_Facilities/FeatureServer/0'
             if target.scheme != 'https' or not allowed or target.username or target.password:
@@ -120,8 +139,16 @@ def snapshots():
 
 def publish():
     from impact_pipeline import collect_impacts
+    from weather_layers import collect_weather
+    from weather_exposure import add_weather_exposure
     board, handoff = snapshots()
-    board['impacts'] = collect_impacts(board, lambda data: review_fields(data, IMPACT_HOSTS))
+    now = datetime.now(timezone.utc)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        impacts = pool.submit(collect_impacts, board, lambda data: review_fields(data, IMPACT_HOSTS), now)
+        layers = pool.submit(collect_weather, board, lambda data: review_fields(data, WEATHER_HOSTS, hydro=True), now)
+        board['impacts'] = impacts.result()
+        board['weather'] = layers.result()
+    add_weather_exposure(board, datetime.now(timezone.utc))
     # Publish only the explicitly listed viewer files and approved snapshot documents.
     # Actions uploads the completed directory only after this script exits successfully.
     with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
@@ -130,7 +157,9 @@ def publish():
         (output / 'data').mkdir()
         shutil.copyfile(ROOT / 'index.html', output / 'index.html')
         for name in ASSETS:
-            shutil.copyfile(ROOT / 'assets' / name, output / 'assets' / name)
+            dest = output / 'assets' / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / 'assets' / name, dest)
         for name, document in [('board', board), ('handoff', handoff)]:
             (output / 'data' / f'{name}.json').write_text(json.dumps(document, ensure_ascii=False, separators=(',', ':'), allow_nan=False), encoding='utf-8')
         destination = ROOT / '_site'
@@ -138,6 +167,7 @@ def publish():
             shutil.rmtree(destination)
         output.rename(destination)
     print('Impact data: ' + ', '.join(f"{key} {value['status']}" for key, value in board['impacts'].items()), flush=True)
+    print('Geographic layers: ' + ', '.join(f"{key} {value['status']}" for key, value in board['weather'].items()), flush=True)
     print(f"IDSS revision {board['revision']} confirmed. " + ', '.join(f"{key} {board['health'][key]['status']}" for key in sorted(SOURCES)))
 
 

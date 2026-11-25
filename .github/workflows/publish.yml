@@ -42,6 +42,13 @@ jobs:
           path: ${{ runner.temp }}/idss-wssi/native.json.gz
           key: idss-wssi-lookup-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: idss-wssi-native-v1-
+      - name: Restore the last verified all-category Census calculation
+        id: all_bands_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/idss-wssi/all-bands-population.json
+          key: idss-all-bands-lookup-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: idss-all-bands-census-v1-
       - name: Build the reviewed briefing
         id: snapshot
         env:
@@ -53,12 +60,21 @@ jobs:
           if [[ -f "$IDSS_WSSI_CACHE_DIR/confirmed-key" ]]; then
             echo "wssi_key=idss-wssi-native-v1-$(cat "$IDSS_WSSI_CACHE_DIR/confirmed-key")" >> "$GITHUB_OUTPUT"
           fi
+          if [[ -f "$IDSS_WSSI_CACHE_DIR/all-bands-population.json" ]]; then
+            python3 -c 'import json, os; print("full_wssi_key=" + json.load(open(os.path.join(os.environ["IDSS_WSSI_CACHE_DIR"], "all-bands-population.json")))["key"])' >> "$GITHUB_OUTPUT"
+          fi
       - name: Save the newly verified WSSI issuance
         if: steps.snapshot.outputs.wssi_key != '' && steps.snapshot.outputs.wssi_key != steps.wssi_cache.outputs.cache-matched-key
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/idss-wssi/native.json.gz
           key: ${{ steps.snapshot.outputs.wssi_key }}
+      - name: Save the Census calculation for this WSSI issue
+        if: steps.snapshot.outputs.full_wssi_key != '' && format('idss-all-bands-census-v1-{0}', steps.snapshot.outputs.full_wssi_key) != steps.all_bands_cache.outputs.cache-matched-key
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/idss-wssi/all-bands-population.json
+          key: idss-all-bands-census-v1-${{ steps.snapshot.outputs.full_wssi_key }}
       - name: Publish the reviewed current-data pointer in this repo
         env:
           IDSS_PUBLICATION_TOKEN: ${{ github.token }}
@@ -97,7 +113,7 @@ jobs:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
           REVISION: ${{ needs.build.outputs.revision }}
         run: python3 -m scripts.verify_pages "$PAGE_URL" "$REVISION"
-      - name: Exercise the published command center in Chrome
+      - name: Exercise the briefing map and reports in Chrome
         if: github.event_name != 'schedule'
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
@@ -105,7 +121,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: github.event_name != 'schedule' && always()
         with:
-          name: command-center-browser-check-${{ github.run_attempt }}
+          name: briefing-browser-check-${{ github.run_attempt }}
           path: browser-check/*.png
           retention-days: 3
           if-no-files-found: ignore

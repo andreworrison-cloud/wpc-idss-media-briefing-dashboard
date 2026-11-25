@@ -1,4 +1,4 @@
-import {addImpactEvidence} from './impact-logic.js';
+import {addImpactEvidence, publicWeatherEvidence} from './impact-logic.js';
 const hour=3600000, minute=60000;
 export const labels={alerts:'NWS active alerts',reports:'NWS local storm reports via IEM',ero:'WPC Excessive Rainfall Outlook',winter:'WPC Winter Storm Severity Index',outlook:'WPC Days 3–7 Hazards Outlook',messages:'WPC and NWC Key Messages'};
 export const refs={alerts:'https://www.weather.gov/documentation/services-web-alerts',reports:'https://mesonet.agron.iastate.edu/lsr/',ero:'https://origin-east-www-wpc.woc.noaa.gov/qpf/excess_rain.shtml',winter:'https://www.weather.gov/wssi/',outlook:'https://origin-east-www-wpc.woc.noaa.gov/threats/threats.php',messages:'https://www.wpc.ncep.noaa.gov/'};
@@ -106,6 +106,7 @@ export function makeBrief(board,scope,now=Date.now()){
   const sections=[], evidence=[],seen=new Map();
   const cite=(label,url)=>{const link=safeURL(url);if(!link)return '';if(!seen.has(link)){seen.set(link,evidence.length+1);evidence.push({label,url:link});}return ' ['+seen.get(link)+']';};
   const alertLines=[], obs=[], forecast=[], review=[];
+  const weather=publicWeatherEvidence(board.weather,scope,now,cite,isoTime);
   if(usable(board,'alerts',now)){
     const unique=alerts.filter(a=>a.unit==='VTEC warning');
     const cap=alerts.filter(a=>a.unit==='CAP message').length;
@@ -114,6 +115,7 @@ export function makeBrief(board,scope,now=Date.now()){
     if((scoped||scope.family)&&unique.length)alertLines.push(unique.length+' reconciled flash flood warning event'+(unique.length===1?'':'s')+' matched the selection.');
     for(const a of alerts.filter(a=>/warning|emergency/i.test(a.title)).slice(0,2))alertLines.push(a.title+' for '+(a.area||a.states.join(', ')||'the source area')+'. NWS message expires '+isoTime(a.expires,true)+'.'+cite(a.headline||a.title,a.source_url));
   }else alertLines.push('The current NWS alert count is unavailable for this brief.');
+  alertLines.push(...weather.winter.filter(line=>!alertLines.some(existing=>existing.split(' for ')[0]===line.split(' for ')[0])));
   const sound=[];
   const nationalMessage=(!scoped&&!scope.family)?(board.sources.messages?.items||[]).find(m=>m.owner==='WPC'&&messageState(board,m,now)==='active'&&m.summary):null;
   if(nationalMessage)sound.push('WPC’s '+nationalMessage.title.replace(/^Key Messages for (?:the )?/i,'')+' briefing highlights the following forecast. “'+nationalMessage.summary.replace(/[.\s]+$/,'')+'.”'+cite(nationalMessage.title,nationalMessage.source_url));
@@ -123,6 +125,7 @@ export function makeBrief(board,scope,now=Date.now()){
     const obs=reports.find(r=>r.impact_flags?.length)||reports[0];
     if(obs)sound.push('A preliminary NWS report places '+obs.title.toLowerCase()+' near '+obs.city+', '+obs.state+', at '+isoTime(obs.valid,true)+'.'+cite('NWS '+obs.wfo+' preliminary report',obs.source_url));
   }
+  if(!sound.length && (weather.winter[0]||weather.discussions[0]))sound.push(weather.winter[0]||weather.discussions[0]);
   if(!sound.length)sound.push('Source coverage does not support an on-air statement for this selection yet.');
   sections.push({title:'On-air draft',lines:sound},{title:'Active warnings and alerts',lines:alertLines});
   if(usable(board,'reports',now)){
@@ -135,6 +138,7 @@ export function makeBrief(board,scope,now=Date.now()){
       obs.push(s+cite('NWS '+r.wfo+' · '+r.title+' · '+isoTime(r.issued,true),r.source_url));
     }
   }else obs.push('Recent local storm reports could not be verified for the selected window.');
+  forecast.push(...weather.discussions);
   sections.push({title:'Reported impacts',lines:obs});
   const day=activeDay(board,1,now),p=population(board,now), w=activeWinter(board,now),o=activeOutlook(board,now);
   if(!scoped&&(!scope.family||scope.family==='flood')&&day){

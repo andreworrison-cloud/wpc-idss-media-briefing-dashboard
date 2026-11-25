@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readRelease} from '../assets/release.js';
 const now=Date.parse('2026-11-24T23:00:00Z');
-const board=delta=>({schema:1,revision:new Date(now-delta*60000).toISOString(),sources:{},health:{},impacts:{}});
+const board=delta=>({schema:1,revision:new Date(now-delta*60000).toISOString(),sources:{},health:{},impacts:{},weather:{radar:{},mpd:{},winter:{},observations:{}}});
 const response=body=>body?Response.json(body):new Response('Missing',{status:404});
 test('the static branch reads the current data from its own public repository',async()=>{
  const calls=[];const b=await readRelease('board',async url=>{calls.push(url);return response(url.startsWith('./')?null:board(0));},now);

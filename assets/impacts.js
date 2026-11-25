@@ -22,13 +22,16 @@ function metric(label,value,detail,iconName,product,accent,extra='') {
   return `<button type="button" class="metric metric-${product}" data-impact-layer="${product}" style="--metric-accent:${accent}" aria-label="Show ${esc(label.toLowerCase())} on the map" aria-pressed="false"><span class="metric-label">${esc(label)}</span><span class="symbol"><svg aria-hidden="true"><use href="#i-${iconName}"/></svg></span><strong>${esc(value)}</strong><span class="context">${esc(detail)}</span>${extra}</button>`;
 }
 
-const selected={record:'ero-d1',state:'',band:'',powerLevel:'county'};
+const selected={record:'ero-d1',state:'',band:'',powerLevel:'auto'};
 export function selectedExposure(board,now=Date.now()) {
   const recs=exposureRecords(board,now), record=recs.find(r=>r.id===selected.record)||recs[0];
   const band=(record?.bands||[]).find(b=>b.id===selected.band)||null;
   return {record,band,state:selected.state,recs};
 }
 export const powerLevel=()=>selected.powerLevel;
+export function setPowerLevel(value) {
+  if(['auto','state','county'].includes(value)) selected.powerLevel=value;
+}
 function metrics(board,onMap) {
   const {aviation:a,power:p,ground:g}=board.impacts||{};
   const rivers=g?.rivers,eventCount=activeAirEvents(a).length;
@@ -52,11 +55,11 @@ function powerPanel(p,onMap) {
   const rows=states.filter(r=>r.customers_out>0).slice(0,5), max=rows[0]?.customers_out||1;
   const counties=live&&p.counties_status==='current'&&recent(p.counties_as_of,Date.now(),35)?(p.counties||[]).filter(r=>r.customers_out>0).slice(0,10):[];
   const countyDetails=counties.length?extendedList('Counties with the most reported outages',table(['County or equivalent','State','Customer accounts out'],counties.map(r=>[esc(r.name),esc(r.state),countText(r.customers_out)]))+note('County data as of '+when(p.counties_as_of)+'.')):'';
-  const mapPick=formSelect('outage-level','Heatmap geography',[['county','Counties',selected.powerLevel==='county'],['state','States',selected.powerLevel==='state']]);
+  const mapPick=formSelect('outage-level','Heatmap geography',[['auto','Auto · states to counties',selected.powerLevel==='auto'],['state','States',selected.powerLevel==='state'],['county','Counties',selected.powerLevel==='county']]);
   const bars=rows.map(r=>`<li class="impact-rank"><span>${esc(r.name)}</span><span class="rank-bar" aria-hidden="true"><i style="width:${100*r.customers_out/max}%"></i></span><b>${countText(r.customers_out)}</b></li>`).join('');
   target.innerHTML=(live?summary(countText(p.customers_out),'electric customer accounts without power')+note([Number.isFinite(p.reporting_utilities)?countText(p.reporting_utilities)+' utilities reporting':null,Number.isFinite(p.coverage_percent)?pct(p.coverage_percent)+' estimated customer coverage':null].filter(Boolean).join(' · ')) :unavailable('utility',p))+
     (bars?`<h4>States with the most reported outages</h4><ol class="impact-ranks">${bars}</ol>`:'')+countyDetails+mapPick+note('An account may serve a home or business. Unreported counties appear hatched. The utility counts include outages from all causes.')+sourceLine([url(links.power,'Data from Power Out Map'),url(links.powerTracker,'PowerOutage.us map')],p?.as_of);
-  byId('outage-level').onchange=e=>{selected.powerLevel=e.target.value;onMap('power',true);};
+  byId('outage-level').onchange=e=>{setPowerLevel(e.target.value);onMap('power',true);};
 }
 function airPanel(a) {
   const live=freshImpact(a,Date.now(),30), events=activeAirEvents(a), rank=e=>e.kind==='ground_stop'?0:e.delay?1:e.kind==='airport_closure'?2:3;
@@ -87,10 +90,10 @@ function exposurePanel(board,onMap,openBrief) {
   if(band)countLabel+=' · '+band.label+' only';
   const mapped=region||band?null:record.mapped_population;
   let html=`<div class="impact-controls">${formSelect('exposure-product','Hazard footprint',options)}${bands.length?formSelect('exposure-band','Category',[['','All mapped categories',!band],...bands.map(b=>[b.id,b.label,b.id===band?.id])]):''}${formSelect('exposure-state','Geography',[['','All covered states and territories',!region],...geography.slice().sort((a,b)=>stateName(a.code).localeCompare(stateName(b.code))).map(s=>[s.code,stateName(s.code),region===s.code])])}</div>`;
-  html+=amount!==null?summary(countText(amount),countLabel):Number.isFinite(mapped)&&mapped>0?summary('At least '+countText(mapped),'residents in the resolved portions'):note('A complete population estimate is unavailable for this footprint.');
+  html+=amount!==null?summary(amount===0?'No populated center matched':countText(amount),amount===0?'0 estimated '+countLabel:countLabel):Number.isFinite(mapped)&&mapped>0?summary('At least '+countText(mapped),'residents in the resolved portions'):note('A complete population estimate is unavailable for this footprint.');
   if(record.valid_start||record.valid_end)html+=note('Valid '+when(record.valid_start)+' – '+when(record.valid_end));
   if((partial||record.group==='alerts'||amount===0)&&record.coverage)html+=note(record.coverage);
-  if(amount===0&&record.zero_basis==='no_populated_center_in_footprint')html+=note('No populated Census center matched this footprint. Small or sparsely populated areas may still contain residents.');
+  if(amount===0)html+=note('No populated 2020 Census block-group center matched this selection. Small or sparsely populated areas may still contain residents.');
   if(!region&&geography.length)html+=extendedList('Population by state or territory',table(['State or territory','Estimated residents'],[...geography].sort((a,b)=>b.population-a.population).map(s=>[esc(stateName(s.code)),countText(s.population)])));
   const source=record.source_url||refs[record.group];
   const method='Each 2020 Census block group contributes its residents once when its population center falls inside the selected footprint. Estimates describe forecast or warning exposure.';
