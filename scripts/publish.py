@@ -29,6 +29,8 @@ ASSETS = (
     'outage-geo-central.json', 'outage-geo-islands.json', 'outage-geo-northeast.json',
     'outage-geo-south.json', 'outage-geo-southeast.json', 'outage-geo-states.json', 'outage-geo-west.json',
     'outage-layer.css', 'outage-layer.js', 'release.js',
+    'briefing-focus.js', 'briefing-relief.webp', 'focus-desk.css', 'focus-desk.js',
+    'spectral-license.txt', 'spectral-semibold.woff2',
 )
 
 

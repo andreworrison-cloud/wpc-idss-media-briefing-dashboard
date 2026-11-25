@@ -21,11 +21,36 @@ function imageURL(value,allowEmbedded) {
   if(allowEmbedded&&typeof value==='string'&&value.startsWith('data:image/png;base64,'))return value;
   return safeSource(value);
 }
+// Only current issued geometry belongs to the briefing outline. Forecast windows can start later.
+export function briefingFeatures(input,now=Date.now()){
+  if(!input||!validUntil(input.valid_end,now)||!validUntil(input.fresh_until,now))return [];
+  const features=[];
+  function add(entry,properties={}){
+    if(!entry)return;
+    if(Array.isArray(entry)){entry.forEach(f=>add(f,properties));return;}
+    const p=entry.properties||properties,g=entry.geometry||entry;
+    if(!validUntil(p.valid_end||p.expires,now))return;
+    if(g.type==='FeatureCollection'){add(g.features,p);return;}
+    if(g.type==='GeometryCollection'){add(g.geometries,p);return;}
+    if(['Polygon','MultiPolygon','LineString','MultiLineString'].includes(g.type)&&g.coordinates?.length){
+      features.push(entry.type==='Feature'?entry:{type:'Feature',geometry:g,properties:p});
+    }
+  }
+  add(input.features||input.geometry);
+  return features;
+}
+function briefingStyle(f,selection) {
+  const p=f.properties||{}, hazard=p.event||p.hazard;
+  const title=p.event||p.hazard||(p.risk?p.risk+' Risk':p.impact||p.label)||selection.label||'Selected hazard';
+  const color=p.color||ERO_COLORS[p.risk]||WSSI_COLORS[p.impact]||EXTENDED_COLORS[p.hazard]
+    ||(hazard&&alertStyle(hazard).known?alertStyle(hazard).color:null)||selection.color;
+  return {title,color:cleanColor(color)};
+}
 function makePanes(map) {
   // Leaflet tilePane is 200, tooltipPane is 650 and popupPane is 700.
-  for(const [name,z] of Object.entries({land:155,backdrop:170,outages:340,raster:348,forecast:370,counties:399,borders:410,alerts:430,mpds:445,labels:450,points:510,selected:535})) {
+  for(const [name,z] of Object.entries({land:155,backdrop:170,hydrography:180,outages:340,raster:348,forecast:370,counties:399,borders:410,alerts:430,mpds:445,briefing:447,labels:450,points:510,callouts:525,selected:535})) {
     const pane=map.createPane('idss-'+name);pane.style.zIndex=z;
-    if(['backdrop','land','labels','borders','raster','counties'].includes(name))pane.style.pointerEvents='none';
+    if(['backdrop','land','hydrography','labels','borders','raster','counties'].includes(name))pane.style.pointerEvents='none';
   }
 }
 export function mountCommandMap(container,options={}) {
@@ -40,14 +65,16 @@ export function mountCommandMap(container,options={}) {
     zoomControl:options.zoomControl??!doc.getElementById('zoom-in'),preferCanvas:false,attributionControl:true,zoomAnimation:true});
   makePanes(map);
   const scene=L.layerGroup().addTo(map), reportsLayer=L.layerGroup().addTo(map), selectedLayer=L.layerGroup().addTo(map);
-  const state={board:null,product:'ero1',reportHours:48,observation:'all',source:'all',winterLayer:'wssi_d1_3',radarFrame:null,
+  const briefingLayer=L.layerGroup().addTo(map);
+  const state={board:null,briefingFocus:null,product:'ero1',reportHours:48,observation:'all',source:'all',winterLayer:'wssi_d1_3',radarFrame:null,
     layers:{alerts:false,reports:true,radar:false,winter:false,mpds:true,counties:false}};
   let dead=false,ref=null,points=[],pointIndex=new Map(),pointTimer,autopanning=false,selectionEpoch=0,legendSerial='',lastLegend=null;
   let countyLayer=null,countyEpoch=0,countyRenderer=null;
   let powerLayer=null,powerImport=null,powerSignature=null,powerLegend=[],previousPowerMode=null,previousPowerActive=null;
   const zoneCache=new Map();
+  let briefingCache=null;
   let radarKey='',radarImage=null,radarInfo=null;
-  const base=mountBase(L,map,{root,tiles:options.tiles??true,onStatus:emitStatus,onReference:g=>{ref=g;if(state.product==='exposure')render();}});
+  const base=mountBase(L,map,{root,style:options.basemap,tiles:options.tiles??true,onStatus:emitStatus,onReference:g=>{ref=g;if(state.product==='exposure')render();}});
   function emitStatus(info){if(!dead)options.onStatus?.(info);}
   function emitLegend(items,note,phase='') {
     const unique=items.filter((v,i)=>v?.label&&items.findIndex(t=>t?.label===v.label&&t?.color===v.color&&t?.shape===v.shape)===i);
@@ -199,11 +226,117 @@ export function mountCommandMap(container,options={}) {
     for(const [label,color] of Object.entries(gaugeColors))items.push(key(label+' flooding',color,'gauge'));
     items.push(key('Ground impact report',POINT_COLORS.impact,'impact'));notes.push('NWPS flood-stage observations and preliminary local impact reports.');return out;
   }
+  function briefingSelection(){
+    const selection=state.briefingFocus,now=nowValue(options.now);
+    return (state.product==='radar'||state.product==='briefing')&&selection&&validUntil(selection.valid_end,now)&&validUntil(selection.fresh_until,now)?selection:null;
+  }
+  function drawBriefing(now,items){
+    const selection=briefingSelection(),source=selection?.features||selection?.geometry;
+    if(!selection){if(briefingCache)briefingLayer.clearLayers();briefingCache=null;delete container.dataset.briefingFocus;delete container.dataset.briefingFeatures;return;}
+    if(!briefingCache||briefingCache.source!==source||briefingCache.label!==selection.label||briefingCache.color!==selection.color||briefingCache.ends!==selection.valid_end
+      ||briefingCache.fresh!==selection.fresh_until||briefingCache.url!==selection.source_url||briefingCache.starts!==selection.valid_start||now>=briefingCache.nextChange){
+      briefingLayer.clearLayers();
+      const features=briefingFeatures(selection,now),legend=new Map(),bounds=L.latLngBounds(),anchors=[],deadlines=[selection.valid_end,selection.fresh_until];
+      for(const f of features){
+        const g=f.geometry||f,p=f.properties||{},style=briefingStyle(f,selection);
+        const isArea=g.type==='Polygon'||g.type==='MultiPolygon';
+        deadlines.push(p.valid_end||p.expires);
+        const info={kind:'Briefing footprint',testId:'idss-briefing-footprint',title:style.title,
+          lines:[p.name||p.region||p.area,p.ugc&&'NWS zone '+p.ugc,p.office,period(p.valid_start||selection.valid_start,p.valid_end||selection.valid_end)].filter(Boolean),
+          url:safeSource(p.source_url||selection.source_url)};
+        const edgeColor=inkFor(style.color);
+        attach(g,{color:edgeColor,weight:2.9,opacity:.68,fill:false,interactive:false},null,'briefing',briefingLayer);
+        const layer=attach(g,{color:style.color,weight:1.75,opacity:1,fill:isArea,fillColor:style.color,fillOpacity:.30,lineJoin:'round'},info,'briefing',briefingLayer);
+        if(layer){
+          const extent=layer.getBounds();bounds.extend(extent);
+          // Anchor a label on a real boundary vertex, including for concave coastal zones.
+          const normalized=geometryNear(g,map.getCenter().lng),coords=normalized.coordinates;
+          const lines=normalized.type==='MultiPolygon'?coords.map(polygon=>polygon[0]):normalized.type==='Polygon'?[coords[0]]:normalized.type==='LineString'?[coords]:coords;
+          const middle=extent.getCenter();let best=Infinity,anchor=null;
+          for(const line of lines){
+            const stride=Math.max(1,Math.ceil(line.length/50));
+            for(let i=0;i<line.length;i+=stride){
+              const [lon,lat]=line[i],distance=(lat-middle.lat)**2+((lon-middle.lng)*Math.cos(lat*Math.PI/180))**2;
+              if(distance<best){best=distance;anchor=[lat,lon];}
+            }
+          }
+          if(anchor)anchors.push({anchor,info,color:style.color});
+        }
+        legend.set(style.title+style.color,key(style.title,style.color,isArea?'square':'line'));
+      }
+      briefingCache={source,label:selection.label,color:selection.color,ends:selection.valid_end,fresh:selection.fresh_until,
+        bounds,anchors,url:selection.source_url,starts:selection.valid_start,items:[...legend.values()],count:features.length,nextChange:Math.min(Infinity,...deadlines.map(Date.parse).filter(d=>d>now))};
+    }
+    container.dataset.briefingFocus='true';
+    container.dataset.briefingFeatures=String(briefingCache.count);
+    items.push(...briefingCache.items);
+  }
+  function fitBriefing(){
+    const b=briefingCache?.bounds;
+    if(!b?.isValid())return false;
+    map.fitBounds(b,{maxZoom:8.5,padding:[26,24],animate:false});return true;
+  }
+  function drawHazardLabel(){
+    if(!briefingCache?.anchors.length||map.getZoom()>6.2)return [];
+    const size=map.getSize(),cells=new Map(),available=[];
+    for(const a of briefingCache.anchors){
+      const at=L.latLng(...a.anchor),xy=map.latLngToContainerPoint(at);
+      if(xy.x<25||xy.y<45||xy.x>size.x-25||xy.y>size.y-35)continue;
+      const cell=Math.floor(xy.x/92)+','+Math.floor(xy.y/72);
+      cells.set(cell,(cells.get(cell)||0)+1);available.push({...a,at,xy,cell});
+    }
+    if(!available.length)return [];
+    const score=p=>cells.get(p.cell)-.2*(Math.abs(p.xy.x/size.x-.5)+Math.abs(p.xy.y/size.y-.5));
+    const a=available.reduce((best,c)=>score(c)>score(best)?c:best);
+    const tag=doc.createElement('span');tag.className='idss-hazard-name';
+    tag.textContent=briefingCache.label||a.info.title;tag.style.setProperty('--hazard-color',a.color);
+    tag.setAttribute('data-testid','idss-briefing-label');
+    const width=Math.min(175,Math.max(95,tag.textContent.length*6+20)),left=a.xy.x<width+12?4:-width+4;
+    tag.style.width=width+'px';tag.style.left=left+'px';
+    const marker=L.marker(a.at,{icon:L.divIcon({html:tag,className:'idss-hazard-anchor',iconSize:[0,0],iconAnchor:[0,0]}),
+      pane:'idss-labels',interactive:false,keyboard:false}).addTo(reportsLayer);
+    marker.getElement()?.setAttribute('aria-hidden','true');
+    return [[a.xy.x+left-3,a.xy.y-33,a.xy.x+left+width+3,a.xy.y+3]];
+  }
+  function drawReportLabels(featured,boxes,scope){
+    const size=map.getSize(),center=map.getCenter().lng;
+    for(const point of featured){
+      const at=L.latLng(point.lat,point.lon+360*Math.round((center-point.lon)/360));
+      const xy=map.latLngToContainerPoint(at),w=size.x<450?120:147,h=52;
+      if(xy.x<5||xy.x>size.x-5||xy.y<5||xy.y>size.y-5)continue;
+      const candidates=[[10,-h-5],[10,5],[-w-10,-h-5],[-w-10,5]];
+      const offset=candidates.find(([x,y])=>{
+        const box=[xy.x+x,xy.y+y,xy.x+x+w,xy.y+y+h];
+        if(box[0]<5||box[1]<5||box[2]>size.x-5||box[3]>size.y-18)return false;
+        if(boxes.some(b=>box[0]<b[2]+5&&box[2]>b[0]-5&&box[1]<b[3]+5&&box[3]>b[1]-5))return false;
+        boxes.push(box);return true;
+      });
+      if(!offset)continue;
+      const tag=doc.createElement('span');tag.className='idss-report-label';
+      tag.setAttribute('data-testid','idss-briefing-report');tag.style.setProperty('--report-ink',point.color);
+      tag.style.setProperty('--callout-width',w+'px');tag.style.setProperty('--callout-x',offset[0]+'px');tag.style.setProperty('--callout-y',offset[1]+'px');
+      const box=doc.createElement('span');box.className='idss-report-label-box';
+      const context=doc.createElement('b');context.className='idss-label-scope';context.textContent=(scope==='national'?'Nationwide':'In area')+' · '+point.source;
+      const amount=doc.createElement('strong');amount.textContent=point.value+' '+(point.record?.label||POINT_LABELS[point.cat]||'');
+      const place=doc.createElement('small');place.textContent=point.place;box.append(context,amount,place);tag.append(box);
+      const m=L.marker(at,{icon:L.divIcon({html:tag,className:'idss-labeled-point',iconSize:[0,0],iconAnchor:[0,0],tooltipAnchor:[0,-5]}),
+        alt:point.title,keyboard:true,autoPanOnFocus:false,pane:'idss-callouts'}).addTo(reportsLayer);
+      decorate(L,m,point,{document:doc,onDetail:options.onDetail,sticky:false});
+      m.getElement()?.setAttribute('aria-label',point.title+', '+point.place);
+    }
+  }
   function drawPoints() {
     clearTimeout(pointTimer);reportsLayer.clearLayers();
+    const occupied=drawHazardLabel();
     if(!points.length){pointIndex.clear();return;}
-    const isImp=state.product==='ground'||state.product==='aviation';
-    pointIndex=observationsOnMap(L,map,reportsLayer,points,{onDetail:options.onDetail,source:isImp?'all':state.source,category:isImp?'all':state.observation,doc});
+    const isImp=state.product==='ground'||state.product==='aviation',selection=briefingSelection(), reportIds=selection?.reports;
+    const source=isImp?'all':state.source,category=isImp?'all':state.observation;
+    const featured=(Array.isArray(reportIds)?reportIds:[]).slice(0,3).map(row=>points.find(p=>p.id===(typeof row==='string'?row:row?.id))).filter(p=>
+      p?.value&&(source==='all'||p.source===source.toUpperCase())&&(category==='all'||p.cat===category));
+    const ids=new Set(featured.map(r=>r.id));
+    // Place the representative observation at its exact reported coordinate in each group.
+    pointIndex=observationsOnMap(L,map,reportsLayer,[...featured,...(ids.size?points.filter(p=>!ids.has(p.id)):points)],{onDetail:options.onDetail,source,category,doc});
+    if(featured.length)drawReportLabels(featured,occupied,selection.reportScope);
   }
   function setPower(active,source) {
     const mode=state.product==='power-county'?'counties':state.product==='power-state'?'states':(state.powerMode||'auto');
@@ -271,7 +404,8 @@ export function mountCommandMap(container,options={}) {
       if(zones)notes.push(zones+' zone-based messages have no published polygon in this layer. Select an alert for its NWS zones.');
     }
     if((state.mpds||weather.mpd||prod==='mpd'||prod==='mpds')&&(prod==='mpd'||prod==='mpds'||l.mpds))mpd(m,now,items,notes);
-    radar(prod==='radar'||l.radar,r,now,items,notes);
+    drawBriefing(now,items);
+    radar(prod==='radar'||prod==='briefing'||l.radar,r,now,items,notes);
     if((prod==='observations'||prod==='evidence'||prod==='reports'||l.reports)&&!['ground','aviation'].includes(prod)&&!isPower(prod)){
       const ob=state.observations||weather.observations;const hours=Math.max(1,Math.min(Number(state.reportHours)||48,Number(ob?.periodHours)||24));let rows=[];
       if(ob){const cutoff=now-hours*3600000;rows=fresh(ob,now)?asFeatures(ob).filter(v=>{const t=Date.parse(v.observedAt||v.valid);return Number.isFinite(t)&&t>=cutoff&&t<=now;}):[];}
@@ -288,6 +422,7 @@ export function mountCommandMap(container,options={}) {
   function update(fields={}) {
     if(dead)return;const productChanged=fields.product!==undefined&&fields.product!==state.product;const {layers,...rest}=fields;Object.assign(state,rest);
     if(layers)Object.assign(state.layers,layers);
+    if(state.product!=='radar'&&state.product!=='briefing')state.briefingFocus=null;
     if(productChanged){selectionEpoch++;selectedLayer.clearLayers();map.closePopup();}
     render();
   }
@@ -304,7 +439,7 @@ export function mountCommandMap(container,options={}) {
       lines:record.lines||[record.area||record.detail,record.observedAt&&utc(record.observedAt)].filter(Boolean),url:safeSource(record.url||record.source_url),kind:record.source||'Map selection'};
     if(g.length){
       let bounds;
-      for(const shape of g){const picked=attach(shape,{color:'#082235',weight:3.8,dashArray:'7 3',fill:false},info,'selected',selectedLayer);
+      for(const shape of g){const picked=attach(shape,{color:container.dataset.basemap==='dark'?'#FFF4D9':'#082235',weight:3.8,dashArray:'7 3',fill:false},info,'selected',selectedLayer);
         if(picked){if(!bounds)bounds=picked.getBounds();else bounds.extend(picked.getBounds());}}
       if(bounds?.isValid()){map.fitBounds(bounds,{maxZoom:9,padding:[28,28],animate:false});L.popup({className:'idss-geo-popup'}).setLatLng(bounds.getCenter()).setContent(detailNode(doc,info,true)).openOn(map);return true;}
     }
@@ -332,7 +467,7 @@ export function mountCommandMap(container,options={}) {
   map.on('popupopen',()=>clearTimeout(pointTimer));
   map.on('moveend zoomend',viewChanged);
   const resize=typeof ResizeObserver!=='undefined'?new ResizeObserver(()=>{if(!dead)map.invalidateSize({pan:false,debounceMoveend:true});}):null;resize?.observe(container);
-  return {map,update,region,focus,focusOutage:(query,opts={popup:true})=>powerLayer?.focus(query,opts)??false,zoomBy:n=>map.setZoom(map.getZoom()+Number(n||0)),invalidateSize:()=>map.invalidateSize({pan:false}),
+  return {map,update,region,focus,fitBriefing,setBasemap:base.setStyle,focusOutage:(query,opts={popup:true})=>powerLayer?.focus(query,opts)??false,zoomBy:n=>map.setZoom(map.getZoom()+Number(n||0)),invalidateSize:()=>map.invalidateSize({pan:false}),
     get legend(){return lastLegend;},get radar(){return radarInfo;},get impactOverlay(){return powerLayer;},
     destroy(){dead=true;selectionEpoch++;clearTimeout(pointTimer);resize?.disconnect();map.off('moveend zoomend',viewChanged);powerLayer?.destroy();base.destroy();map.remove();}
   };

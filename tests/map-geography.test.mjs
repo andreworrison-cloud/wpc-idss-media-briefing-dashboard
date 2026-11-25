@@ -36,3 +36,26 @@ test('reports retain explicit zero and UTC measurement time in the first hover l
   assert.ok(point.lines.includes('24 h accumulation'));assert.equal(reportPoint({...row,latitude:null}),null);
   assert.equal(reportPoint({...row,trace:true,value:null}).value,'Trace');
 });
+
+test('the briefing map accepts current native zones and mixed collections while excluding expired shapes',async()=>{
+  const {briefingFeatures}=await import(new URL('command-map.js',root));
+  const now=Date.parse('2026-11-25T00:10:00Z');
+  const native={type:'Polygon',coordinates:[[[-90,38],[-89,38],[-89,39],[-90,38]]]};
+  const current={type:'Feature',properties:{event:'Winter Storm Watch',valid_end:'2026-11-25T12:00:00Z'},geometry:native};
+  const old={...current,properties:{...current.properties,valid_end:'2026-11-24T12:00:00Z'}};
+  const collection={type:'FeatureCollection',features:[current,old,{type:'Feature',properties:{label:'Forecast area'},geometry:{type:'GeometryCollection',geometries:[native,{type:'Point',coordinates:[-90,38]}]}}]};
+  const result=briefingFeatures({features:collection},now);
+  assert.equal(result.length,2);
+  assert.equal(result[0],current);
+  assert.equal(result[1].properties.label,'Forecast area');
+  assert.equal(result[1].geometry,native);
+  assert.deepEqual(briefingFeatures({features:collection,fresh_until:'2026-11-25T00:08:00Z'},now),[]);
+  assert.deepEqual(briefingFeatures({features:[current],valid_end:'2026-11-25T00:10:00Z'},now),[]);
+});
+
+test('published relief and city orientation data include the national and regional geography',()=>{
+  const d=JSON.parse(readFileSync(new URL('geo-reference.json',root)));
+  for(const name of ['Seattle','Denver','St. Louis','Juneau'])assert.ok(d.cities.some(c=>c[0]===name&&Number.isFinite(c[1])&&Number.isFinite(c[2])));
+  const relief=readFileSync(new URL('briefing-relief.webp',root));
+  assert.equal(relief.toString('ascii',8,12),'WEBP');
+});

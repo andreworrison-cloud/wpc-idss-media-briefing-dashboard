@@ -1,4 +1,5 @@
 import {readRelease} from './release.js';
+import {mountFocusDesk} from './focus-desk.js';
 import {currentRadar} from './browser-radar.js';
 import {renderImpacts,selectedExposure,powerLevel,setPowerLevel} from './impacts.js';
 import {exposureRecords,currentGroundReports,impactNames} from './impact-logic.js';
@@ -83,9 +84,10 @@ async function startMap() {
   }catch{mapModuleFailed=true;$('map-foot').textContent='The geographic map could not be loaded. Source-linked measurements and impact details remain available below.';}
 }
 function updateMap(newBoard=false) {
-  syncControls();if(!map)return;
+  syncControls();focusDesk.syncMapKey(product);if(!map)return;
   const pick=board?selectedExposure(board):{};
   const query={product,powerMode:({auto:'auto',state:'states',county:'counties'})[powerLevel()],reportHours:Number($('report-hours').value)||48, layers:{reports:$('show-reports').checked,alerts:$('show-alerts').checked,mpds:$('show-mpds').checked,radar:$('show-radar').checked,counties:$('show-counties').checked},observation:$('map-observation').value,source:$('report-source').value||'all',winterLayer:$('winter-layer').value||'winter_alerts',radarFrame:frame,exposureRecord:pick.record||null,exposureBand:pick.band||null,exposureState:pick.state||''};
+  query.briefingFocus=product==='radar'?focusDesk.mapContext():null;
   if(newBoard||!board)query.board=board;
   map.update(query);
 }
@@ -93,6 +95,7 @@ function showMap(name, scroll=false) {
   if(![...$('product').options].some(o=>o.value===name))return;
   if(name!==product){stopLoop();$('map-detail').hidden=true;for(const key of [...notices.keys()])if(key!=='basemap')notices.delete(key);$('map-notice').textContent=[...notices.values()].join(' ');}
   product=name;$('product').value=name;updateMap();
+  $('map-heading').textContent=({power:'Utility outages',aviation:'Air travel',ground:'Ground impacts',exposure:'Resident exposure'})[name]||'U.S. weather map';
   if(scroll){if($('board-view').hidden)location.hash='board';$('map-stage').scrollIntoView({block:'start'});}
 }
 function showImpact(id) {
@@ -110,10 +113,30 @@ function focusReport(row) {
   if(located){$('map-observation').value=row.category||'all';showMap('observations');map?.focus({...row,...info});}
   writeDetail(info);$('map-stage').scrollIntoView({block:'start'});
 }
+const focusDesk=mountFocusDesk({
+  onChange() { showMap('radar'); map?.fitBriefing(); },
+  onScopeChange() { updateMap(); },
+  onFit() {
+    showMap('radar');
+    if (map?.fitBriefing()) $('map-stage').scrollIntoView({block:'nearest'});
+  },
+  onLocate(row) {
+    if (!map || !Number.isFinite(row.longitude) || !Number.isFinite(row.latitude)) {
+      writeDetail(reportPresentation(row));
+    } else {
+      showMap('radar');
+      map.focus({...row,...reportPresentation(row)});
+    }
+    $('map-stage').scrollIntoView({block:'nearest'});
+  }
+});
+const settings=$('map-settings');
+document.addEventListener('pointerdown',e=>{if(settings.open&&!settings.contains(e.target))settings.open=false;});
+settings.addEventListener('keydown',e=>{if(e.key==='Escape'){settings.open=false;settings.querySelector('summary').focus();}});
 const reports=mountObservationDesk(focusReport);
 for(const b of document.querySelectorAll('[data-product]'))b.addEventListener('click',()=>showMap(b.dataset.product));
 for(const b of document.querySelectorAll('[data-map-product]'))b.onclick=()=>showMap(b.dataset.mapProduct,true);
-$('product').onchange=e=>showMap(e.target.value);
+$('product').onchange=e=>{showMap(e.target.value);settings.open=false;};
 $('region').onchange=e=>map?.region(e.target.value);
 $('zoom-in').onclick=()=>map?.zoomBy(.5);$('zoom-out').onclick=()=>map?.zoomBy(-.5);
 $('map-power-level').onchange=e=>{setPowerLevel(e.target.value);if($('outage-level'))$('outage-level').value=powerLevel();updateMap();};
@@ -212,7 +235,7 @@ function route() {
 }
 window.addEventListener('hashchange',route);
 function render() {
-  configureProducts();renderImpacts(board,(id,scroll)=>{showImpact(id);showMap(id,scroll);},useFootprint);showImpact(currentImpact);
+  focusDesk.update(board);configureProducts();renderImpacts(board,(id,scroll)=>{showImpact(id);showMap(id,scroll);},useFootprint);showImpact(currentImpact);
   reports.update(board.weather?.observations);updateMap(true);renderPriorities();renderMessages();renderSources();renderCatalog();chooseBrief();renderBrief();
   const t=board.revision||board.captured_at, stale=Date.now()-Date.parse(t)>30*60000;
   $('sync-status').textContent=(stale?'Saved collection · ':'Collection · ')+time(t);
@@ -228,7 +251,7 @@ async function refresh(){
       configureProducts();updateMap(true);renderSources();
     }
   }
-  catch{if(board){$('sync-status').textContent='Refresh unavailable · Saved '+time(board.revision);}else{$('sync-status').textContent='Current briefing collection unavailable';reports.update(null);for(const id of ['priorities','ground-panel','exposure-panel','weather-source-rows','impact-source-rows','sources-table'])$(id).textContent='Current collection unavailable.';
+  catch{if(board){focusDesk.update(board);updateMap();$('sync-status').textContent='Refresh unavailable · Saved '+time(board.revision);}else{focusDesk.update(null);$('sync-status').textContent='Current briefing collection unavailable';reports.update(null);for(const id of ['priorities','ground-panel','exposure-panel','weather-source-rows','impact-source-rows','sources-table'])$(id).textContent='Current collection unavailable.';
     $('brief-output').textContent='A current collection is required to generate a source-linked briefing.';
     $('power-panel').innerHTML='<p>Current utility figures are unavailable. '+source('https://poweroutage.us/','PowerOutage.us map')+' · '+source('https://poweroutmap.com/','Power Out Map')+'</p>';
     $('aviation-panel').innerHTML='<p>Current FAA notices are unavailable. '+source('https://nasstatus.faa.gov/','FAA status')+' · '+source('https://www.flightaware.com/live/cancelled/today/US','U.S. flight delays and cancellations on FlightAware')+'</p>';if(!mapModuleFailed)$('map-foot').textContent='Current weather layers unavailable.';}}

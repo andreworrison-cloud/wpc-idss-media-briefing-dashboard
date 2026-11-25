@@ -58,6 +58,27 @@ def check(url):
         wait("window.qaWeather && document.querySelector('[data-testid=idss-states]')", 'Geographic reference')
         if js("return qaWeather.radar.status==='current' && Date.parse(qaWeather.radar.fresh_until)>Date.now()"):
             wait("document.querySelector('[data-testid=idss-radar-raster]')?.naturalWidth>0", 'Time-labeled radar image loads in Chrome')
+        wait("document.querySelector('#focus-headline') && !document.querySelector('#focus-headline').textContent.startsWith('Loading')", 'Opening briefing resolves')
+        def on_screen(selector):
+            return js(f"const r=document.querySelector({json.dumps(selector)}).getBoundingClientRect(); return r.width>0 && r.top>=0 && r.top+30<innerHeight")
+        assert on_screen('#atlas') and on_screen('#focus-headline') and on_screen('#focus-evidence-title'), 'Map, briefing and observations should be visible together'
+        choices=js("return [...document.querySelector('#focus-product').options].filter(o=>o.value).map(o=>o.value)")
+        if choices:
+            wait("document.querySelector('#atlas').dataset.briefingFeatures>0 && document.querySelector('.focus-number') && !document.querySelector('#map-focus-key').hidden", 'Matched briefing footprint and Census estimate')
+            initial=js("return document.querySelector('#focus-product').value")
+            others=[c for c in choices if c!=initial]
+            if others:
+                select('focus-product',others[0])
+                wait("document.querySelector('#map-focus-key').textContent===document.querySelector('#focus-product').selectedOptions[0].textContent && document.querySelector('#atlas').dataset.briefingFeatures>0", 'New hazard and map update together')
+                select('focus-product',initial)
+                select('region','CONUS')
+            js("document.querySelector('[data-focus-scope=national]').click()")
+            wait("document.querySelector('#focus-evidence-title').textContent==='Reported nationwide' && document.querySelector('[data-focus-scope=national]').getAttribute('aria-pressed')==='true'", 'National reports carry explicit scope')
+            js("document.querySelector('[data-focus-scope=local]').click()")
+            wait("document.querySelector('#focus-evidence-title').textContent.startsWith('Reported in the') && (document.querySelector('#focus-reports button')||document.querySelector('#focus-report-note').textContent)", 'Geographically scoped observations or a clear empty state')
+            if not js("return !!document.querySelector('#focus-reports button')"):
+                js("document.querySelector('[data-focus-scope=national]').click()")
+            assert js("return !document.querySelector('#focus-copy').disabled")
         snap('briefing-desktop')
         old = js("return Number(document.querySelector('#atlas').dataset.zoom)")
         js("document.querySelector('#zoom-in').click()")
@@ -108,8 +129,12 @@ def check(url):
         api(prefix+'/goog/cdp/execute', {'cmd':'Emulation.setDeviceMetricsOverride','params':{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True}})
         wait("!document.querySelector('#board-view').hidden && document.documentElement.scrollWidth<=392 && document.documentElement.clientWidth<=392",'Phone viewport')
         select('region','CONUS')
+        wait("document.querySelector('#atlas').getBoundingClientRect().top>0", 'Phone shows the map below the headline')
+        assert on_screen('#focus-headline') and on_screen('#atlas'), 'Briefing and geographic map should both appear on opening the phone view'
+        if js("return document.querySelector('#focus-glance').textContent.length>0"):
+            assert on_screen('#focus-glance'), 'Measured amount should be visible beside the mobile briefing'
         snap('briefing-phone')
-        print('Verified map, quarter-step zoom, radar, winter layers, MPDs, measured report hover, outage map, state brief and phone layout.')
+        print('Verified simultaneous map and briefing, hazard and observation scope changes, quarter-step zoom, radar, winter, MPDs, report hover, outage geography, state brief and phone layout.')
     except Exception:
         if 'prefix' in locals():
             snap('check-failure')

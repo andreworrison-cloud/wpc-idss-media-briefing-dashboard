@@ -56,60 +56,128 @@ export function loadReference(root=ASSET_ROOT) {
   })).catch(e=>{cache.delete(href);throw e;}));
   return cache.get(href);
 }
-export function mountBase(L,map,{root=ASSET_ROOT,onStatus,tiles=true,onReference}={}) {
-  const doc=map.getContainer().ownerDocument;
+const basePalettes = {
+  dark: {foreign:'#243a49', land:'#2d4352', water:'#0c1e2e', coast:'#617783', state:'#c4d6da', river:'#527285'},
+  topo: {foreign:'#e4e6da', land:'#ebece2', water:'#a8ccdd', coast:'#9daa9b', state:'#516775', river:'#91bacd'}
+};
+const nearLongitude=(lon,center)=>lon+360*Math.round((center-lon)/360);
+const smallStates=new Set(['DC','MD','DE','RI','NJ','VT','NH','MA','CT','VI','MP','AS','GU']);
+const majorStates=new Set(['CA','WA','MT','CO','TX','MN','IL','GA','NY','AK','HI','PR']);
+const reliefBounds=[[10,-175],[75,-45]];
+export function mountBase(L,map,{root=ASSET_ROOT,onStatus,tiles=true,onReference,style:initialStyle}={}) {
+  const container=map.getContainer(),doc=container.ownerDocument;
   const vector=L.layerGroup().addTo(map), borders=L.layerGroup().addTo(map), labels=L.layerGroup().addTo(map);
-  let destroyed=false, reference=null, previousLabelBand='', loaded=0, errors=0, timer, basemap;
+  const water=L.layerGroup().addTo(map);
+  let destroyed=false,reference=null,loaded=0,errors=0,timer,basemap,style;
+  let saved;
+  try{saved=doc.defaultView?.localStorage.getItem('wpc-idss:basemap');}catch{}
   const baseFill={stroke:false,fillOpacity:1,interactive:false,pane:'idss-land'};
-  const vectorStyle=(geometry,style,group,lon=-98)=>L.geoJSON(geometryNear(geometry,lon),{style,interactive:false,pane:style.pane}).addTo(group);
-  const homeBackdrop=L.imageOverlay(new URL('conus-reference.webp',root).href,[[11.178401873711781,-135],[55.77657301866769,-56.25]],{
+  function vectorStyle(geometry,sty,group,lon=-98) {
+    return L.geoJSON(geometryNear(geometry,lon),{style:sty,interactive:false,pane:sty.pane}).addTo(group);
+  }
+  const national=L.imageOverlay(new URL('conus-reference.webp',root).href,[[11.178401873711781,-135],[55.77657301866769,-56.25]],{
     pane:'idss-backdrop',alt:'USGS geographic reference',interactive:false,className:'idss-reference-backdrop'
-  }).addTo(map);
-  map.attributionControl.addAttribution(attribution);
-  map.attributionControl.addAttribution('<a href="https://www.census.gov/geographies/mapping-files/time-series/geo/cartographic-boundary.html" target="_blank" rel="noopener">Census</a> · <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>');
+  });
+  const relief=L.imageOverlay(new URL('briefing-relief.webp',root).href,reliefBounds,{
+    pane:'idss-backdrop',alt:'Natural Earth shaded relief',interactive:false,className:'idss-relief-backdrop'
+  });
+  const terrainCredit='<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth relief</a>';
+  map.attributionControl.addAttribution('<a href="https://www.census.gov/geographies/mapping-files/time-series/geo/cartographic-boundary.html" target="_blank" rel="noopener">Census</a>');
+  map.attributionControl.addAttribution(terrainCredit);
   map.attributionControl.setPrefix(false);
-  const label=(text,at,cls)=>{
-    const span=doc.createElement('span');span.textContent=text;
-    L.marker(at,{icon:L.divIcon({className:cls,html:span,iconSize:[0,0]}),interactive:false,keyboard:false,pane:'idss-labels'}).addTo(labels);
-  };
-  function drawLabels() {
-    if(!reference)return;
-    const z=map.getZoom(), band=z<3.35?'far':z<5.7?'state':z<8?'city':'close';
-    const online=loaded>0&&errors<loaded;map.getPane('idss-borders').style.opacity=z>=8&&online?'.20':'1';
-    // Remote tiles include place names. National state abbreviations stay visible above radar.
-    const key=band+online;if(key===previousLabelBand)return;previousLabelBand=key;labels.clearLayers();
-    if(band==='state'||(band==='city'&&!online)){
-      const small=new Set(['DC','MD','DE','RI','NJ','VT','NH','MA','CT','VI','MP','AS','GU']);
-      for(const s of reference.states)if(!small.has(s.code)||band==='city')label(s.code,s.center,'idss-state-label');
-    }
-    if(!online&&(band==='city'||band==='close'))for(const [name,lat,lon] of reference.cities)label(name,[lat,lon],'idss-city-label');
+  if(tiles) {
+    basemap=L.tileLayer(typeof tiles==='string'?tiles:tileSource,{maxZoom:16,maxNativeZoom:16,minZoom:2,keepBuffer:1,
+      pane:'tilePane',className:'idss-usgs-tiles',updateWhenIdle:true,updateWhenZooming:false});
+    basemap.on('loading',()=>{loaded=0;errors=0;}).on('tileload',()=>{loaded++;tileStatus();}).on('tileerror',()=>{errors++;tileStatus();});
   }
   function tileStatus() {
     clearTimeout(timer);
     timer=setTimeout(()=>{
-      if(destroyed)return;drawLabels();
+      if(destroyed||!basemap||!map.hasLayer(basemap))return;
+      drawLabels();
       if(errors>0)onStatus?.({layer:'basemap',status:'partial',message:loaded?'Local geography fills gaps in the USGS tile coverage.':'Local geographic reference in use. Detailed USGS tiles are unavailable.'});
       else if(loaded>0)onStatus?.({layer:'basemap',status:'current',message:'USGS topographic reference'});
     },220);
   }
-  if(tiles) {
-    basemap=L.tileLayer(typeof tiles==='string'?tiles:tileSource,{maxZoom:16,maxNativeZoom:16,minZoom:2,keepBuffer:1,
-      pane:'tilePane',className:'idss-usgs-tiles',updateWhenIdle:true,updateWhenZooming:false});
-    basemap.on('loading',()=>{loaded=0;errors=0;}).on('tileload',()=>{loaded++;tileStatus();}).on('tileerror',()=>{errors++;tileStatus();}).addTo(map);
-  }
-  loadReference(root).then(g=>{
-    if(destroyed)return;reference=g;
-    for(const land of g.land)vectorStyle(land,{...baseFill,fillColor:'#E4E6DA',color:'#9DAA9B',stroke:true,weight:.45},vector);
-    for(const state of g.states) {
-      const near=state.code==='AK'?-154:state.center[1];
-      vectorStyle(state.geometry,{...baseFill,fillColor:'#EBECE2'},vector,near);
-      const edge=vectorStyle(state.geometry,{pane:'idss-borders',color:'#516775',weight:.8,opacity:.78,fill:false,interactive:false},borders,near);
-      edge.eachLayer(l=>{l.getElement()?.setAttribute('data-testid','idss-states');});
+  function syncTiles() {
+    const useTiles=Boolean(basemap)&&(style==='topo'||map.getZoom()>=6.8);
+    if(basemap&&useTiles!==map.hasLayer(basemap)){
+      if(useTiles){basemap.addTo(map);}else{map.removeLayer(basemap);loaded=0;errors=0;clearTimeout(timer);}
     }
-    vectorStyle(g.lakes,{...baseFill,fillColor:'#A8CCDD'},vector);
-    vectorStyle(g.rivers,{pane:'idss-land',stroke:true,fill:false,color:'#91BACD',weight:.85,interactive:false},vector);
-    drawLabels();onReference?.(g);
+    const credit=style==='topo'||useTiles;
+    if(credit!==Boolean(container.dataset.usgsCredit)){
+      if(credit){map.attributionControl.addAttribution(attribution);container.dataset.usgsCredit='yes';}
+      else{map.attributionControl.removeAttribution(attribution);delete container.dataset.usgsCredit;}
+    }
+  }
+  function drawGeography(){
+    if(!reference)return;
+    vector.clearLayers();borders.clearLayers();water.clearLayers();
+    const p=basePalettes[style],dark=style==='dark';
+    for(const land of reference.land)vectorStyle(land,{...baseFill,fillColor:p.foreign,color:p.coast,stroke:true,weight:.55},vector);
+    for(const state of reference.states){
+      const near=state.code==='AK'?-154:state.center[1];
+      vectorStyle(state.geometry,{...baseFill,fillColor:p.land},vector,near);
+      const edge=vectorStyle(state.geometry,{pane:'idss-borders',color:p.state,weight:dark?.85:.8,opacity:dark?.74:.78,fill:false,interactive:false},borders,near);
+      edge.eachLayer(layer=>layer.getElement()?.setAttribute('data-testid','idss-states'));
+    }
+    const waterPane=dark?'idss-hydrography':'idss-land';
+    vectorStyle(reference.lakes,{...baseFill,pane:waterPane,fillColor:p.water},water);
+    vectorStyle(reference.rivers,{pane:waterPane,stroke:true,fill:false,color:p.river,weight:dark?.75:.85,opacity:dark?.72:1,interactive:false},water);
+  }
+  function drawLabels(){
+    if(!reference||destroyed)return;
+    labels.clearLayers();
+    const zoom=map.getZoom(),size=map.getSize(),center=map.getCenter().lng,online=basemap&&map.hasLayer(basemap)&&loaded>0&&errors<loaded;
+    map.getPane('idss-borders').style.opacity=zoom>=8&&online&&style==='topo'?'.25':'1';
+    const taken=[];
+    function place(text,lat,lon,kind){
+      const position=L.latLng(lat,nearLongitude(lon,center)),xy=map.latLngToContainerPoint(position);
+      const isState=kind==='state',w=isState?21:Math.min(108,text.length*5.6+12),h=isState?13:16;
+      const left=isState?xy.x-w/2:xy.x-2,top=xy.y-h/2;
+      const box=[left,top,left+w,top+h];
+      if(box[0]<4||box[1]<6||box[2]>size.x-4||box[3]>size.y-6)return;
+      if(taken.some(a=>box[0]<a[2]+4&&box[2]>a[0]-4&&box[1]<a[3]+3&&box[3]>a[1]-3))return;
+      taken.push(box);
+      const span=doc.createElement('span');span.textContent=text;
+      L.marker(position,{icon:L.divIcon({className:'idss-'+kind+'-label',html:span,iconSize:[0,0]}),interactive:false,keyboard:false,pane:'idss-labels'}).addTo(labels);
+    }
+    if(zoom<7.8)for(const state of reference.states){
+      if(zoom<3.65&&!majorStates.has(state.code)||zoom<5.5&&smallStates.has(state.code))continue;
+      place(state.code,...state.center,'state');
+    }
+    if(online&&style==='topo'||zoom<3.7)return;
+    const rank=zoom<4.3?0:zoom<5.2?1:zoom<6?2:zoom<6.8?4:6;
+    for(const [name,lat,lon,r] of reference.cities)if(r<=rank)place(name,lat,lon,'city');
+  }
+  function changeStyle(value,remember=false){
+    if(!Object.hasOwn(basePalettes,value)||value===style)return;
+    style=value;container.dataset.basemap=style;
+    if(remember)try{doc.defaultView?.localStorage.setItem('wpc-idss:basemap',style);}catch{}
+    const was=style==='dark'?national:relief, active=style==='dark'?relief:national;
+    if(map.hasLayer(was))map.removeLayer(was);
+    active.addTo(map);
+    syncTiles();drawGeography();drawLabels();select.value=style;
+    onStatus?.({layer:'basemap',status:'current',message:style==='dark'?'Natural Earth shaded relief':'USGS topographic reference'});
+    map.fire('idssbasemapchange',{style});
+  }
+  const selector=L.control({position:'bottomleft'}), select=doc.createElement('select');
+  selector.onAdd=()=>{
+    const box=doc.createElement('div');box.className='idss-base-switch';
+    select.setAttribute('aria-label','Map background');select.setAttribute('data-testid','idss-basemap');
+    for(const [id,label] of [['dark','Dark relief'],['topo','USGS topo']]){
+      const option=doc.createElement('option');option.value=id;option.textContent=label;select.append(option);
+    }
+    box.append(select);L.DomEvent.disableClickPropagation(box);L.DomEvent.disableScrollPropagation(box);
+    select.onchange=()=>changeStyle(select.value,true);return box;
+  };
+  selector.addTo(map);
+  changeStyle(Object.hasOwn(basePalettes,initialStyle)?initialStyle:saved==='topo'?'topo':'dark');
+  const onZoom=()=>{syncTiles();drawLabels();};
+  map.on('zoomend',onZoom);map.on('moveend',drawLabels);
+  loadReference(root).then(g=>{
+    if(destroyed)return;
+    reference=g;drawGeography();drawLabels();onReference?.(g);
   }).catch(()=>onStatus?.({layer:'geography',status:'partial',message:'Local state boundaries could not be loaded.'}));
-  map.on('zoomend',drawLabels);
-  return {get reference(){return reference;},destroy(){destroyed=true;clearTimeout(timer);map.off('zoomend',drawLabels);}};
+  return {get reference(){return reference;},setStyle:value=>changeStyle(value,true),destroy(){destroyed=true;clearTimeout(timer);map.off('zoomend',onZoom);map.off('moveend',drawLabels);selector.remove();}};
 }

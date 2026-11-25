@@ -34,3 +34,37 @@
 .idss-nearby-list{display:grid;gap:3px;margin-top:7px}
 .idss-nearby-list button{background:#EDF3F4;border:1px solid #B8C9CD;text-align:left;font-family:inherit;font-size:11px;line-height:1.3;color:#123D55;padding:4px 6px;border-radius:4px;cursor:pointer}
 @media(max-width:650px){.idss-map.leaflet-container{min-height:315px}.idss-map .leaflet-control-zoom a{width:36px;height:36px;line-height:36px}.idss-map .leaflet-control-attribution{max-width:72vw;font-size:8px}.idss-map .leaflet-control-zoom{margin:8px}}
+/* Base cartography is styled separately from every meteorological layer. */
+.idss-map[data-basemap=dark]{background:#0c1e2e}
+.idss-map .idss-relief-backdrop{mask-image:linear-gradient(0deg,transparent,#000 2%,#000 98%,transparent),linear-gradient(90deg,transparent,#000 2%,#000 98%,transparent);mask-composite:intersect}
+.idss-map[data-basemap=dark] .leaflet-tile-pane{mix-blend-mode:screen}
+.idss-map[data-basemap=dark] .idss-usgs-tiles{filter:grayscale(1) invert(1) contrast(1.45) brightness(.68);opacity:.65}
+.idss-map .idss-base-switch{margin:0 0 7px 9px}
+.idss-map .idss-base-switch select{appearance:none;color:#18374b;background:#f7fbfc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='m2 2 4 4 4-4' fill='none' stroke='%233e5e70' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 7px center/9px 6px;border:1px solid #8ba4b1;border-radius:4px;padding:5px 20px 5px 8px;font:600 12px/1.2 "DM Sans",Arial,sans-serif;min-height:28px;cursor:pointer;box-shadow:0 1px 4px #08223830}
+.idss-map[data-basemap=dark] .idss-base-switch select{color:#f2f8fa;border-color:#8099a4;background-color:#182c3cea;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='m2 2 4 4 4-4' fill='none' stroke='%23d0e3e8' stroke-width='1.5'/%3E%3C/svg%3E")}
+.idss-map .idss-base-switch select:focus-visible{outline:2px solid #75bfe6;outline-offset:2px}
+.idss-map[data-basemap=dark] .leaflet-control-attribution{color:#c2d5df;background:#0d1f2ee8}
+.idss-map[data-basemap=dark] .leaflet-control-attribution a{color:#cfdee7}
+.idss-map[data-basemap=dark] .leaflet-control-scale-line{color:#d0dfe7;border-color:#93aebb;background:#0d1f2ed9}
+.idss-map[data-basemap=dark] .idss-state-label span{color:#d5e2e5;text-shadow:0 1px 2px #081b2b,1px 0 2px #081b2b,-1px 0 2px #081b2b;font-size:10px;letter-spacing:.1em}
+.idss-map .idss-city-label span{transform:translate(4px,-50%);font-weight:550}
+.idss-map .idss-city-label span:before{position:absolute;left:-7px;top:50%;width:3px;height:3px;border-radius:50%;background:currentColor;content:"";transform:translateY(-50%)}
+.idss-map[data-basemap=dark] .idss-city-label span{color:#c2cfd8;text-shadow:0 1px 2px #0b1c2b,1px 0 2px #0b1c2b,-1px 0 2px #0b1c2b}
+.idss-map[data-briefing-focus=true] .idss-glyph-shape{inset:2px;border-width:1px}
+.idss-map[data-briefing-focus=true] .idss-glyph-shape svg{width:12px;height:12px}
+.idss-map[data-briefing-focus=true] .idss-glyph-count{left:15px;top:-2px}
+.idss-labeled-point{background:transparent;border:0}
+.idss-report-label{position:relative;display:block;pointer-events:none}
+.idss-report-label:before{content:"";position:absolute;top:-4px;left:-4px;width:6px;height:6px;background:var(--report-ink);border:1.5px solid white;border-radius:50%;box-shadow:0 0 0 2px #102a38}
+.idss-report-label-box{position:absolute;left:var(--callout-x);top:var(--callout-y);width:max-content;max-width:var(--callout-width);box-sizing:border-box;padding:4px 8px 5px;border:1px solid #7d99a7;border-left:3px solid var(--report-ink);border-radius:3px;background:#f6fbfcee;color:#152f43;box-shadow:0 2px 6px #051c3770;pointer-events:auto;cursor:pointer}
+.idss-map[data-basemap=dark] .idss-report-label-box{background:#102739f2;color:#fff;border-color:#829ca9;border-left-color:var(--report-ink)}
+.idss-report-label-box strong,.idss-report-label-box small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.idss-report-label-box strong{font:700 13px/1.24 "DM Sans",Arial,sans-serif}
+.idss-report-label-box small{font:500 10px/1.25 "DM Sans",Arial,sans-serif;margin-top:1px}
+.idss-map .idss-labeled-point:focus-visible .idss-report-label-box,.idss-report-label-box:hover{outline:2px solid #93d6ee;outline-offset:1px}
+@media(max-width:650px){.idss-map .idss-base-switch select{min-height:27px}.idss-map .idss-base-switch{margin-left:6px;margin-bottom:3px}.idss-report-label-box strong{font-size:12px}.idss-report-label-box{padding:4px 6px}}
+.idss-hazard-anchor{pointer-events:none;background:transparent;border:0}
+.idss-hazard-name{box-sizing:border-box;display:block;position:absolute;bottom:6px;padding:3px 6px 3px 8px;border:1px solid #80949d;border-left:4px solid var(--hazard-color);background:#f9fcfded;box-shadow:0 1px 3px #102c3960;color:#17374c;text-align:left;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font:650 11px/1.24 "DM Sans",Arial,sans-serif}
+.idss-map[data-basemap=dark] .idss-hazard-name{border-color:#809ba8;border-left-color:var(--hazard-color);background:#11273aef;color:#eef7fa}
+.idss-report-label-box .idss-label-scope{display:block;margin-bottom:1px;font:600 9px/1.15 "DM Sans",Arial,sans-serif;letter-spacing:.035em;color:#405f72}
+.idss-map[data-basemap=dark] .idss-label-scope{color:#b9d2de}
