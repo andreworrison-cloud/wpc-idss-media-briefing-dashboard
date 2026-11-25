@@ -90,6 +90,10 @@ def check(url):
             if js("return qaWeather.observations.features.some(r=>r.sourceType==='PNS')"):
                 select('report-source','PNS')
                 wait("document.querySelector('#report-table tbody tr a')?.textContent.includes('PNS')", 'PNS measurement filter and source link')
+                wait("document.querySelectorAll('#report-timing [data-time-bin]').length===12",'Observation time chart')
+                js("Array.from(document.querySelectorAll('[data-time-bin]')).find(b=>Number(b.querySelector('small').textContent)>0).click()")
+                wait("document.querySelector('#report-timing button[aria-pressed=true]') && document.querySelector('#report-table tbody tr')", 'Choose a reporting interval')
+                js("document.querySelector('[data-time-clear]').click()")
                 js("document.querySelector('#report-table [data-report]').click()")
                 wait("document.querySelector('[data-testid=idss-geo-popup]') || !document.querySelector('#map-detail').hidden", 'Locate the selected observation')
         click_product('power')

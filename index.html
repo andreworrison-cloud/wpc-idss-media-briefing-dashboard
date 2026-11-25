@@ -25,6 +25,9 @@
   <symbol id="i-snow" viewBox="0 0 24 24"><path d="M12 2v20M3.4 7l17.2 10M3.4 17 20.6 7m-12-3 3.4 3 3.4-3m-6.8 16 3.4-3 3.4 3M3.5 11l4.1-1.5L7 5m10 14-.6-4.5 4.1-1.5M7 19l.6-4.5L3.5 13M20.5 11l-4.1-1.5L17 5"/></symbol>
   <symbol id="i-rain" viewBox="0 0 24 24"><path d="M12 2c1.8 3.4 6.8 8.5 6.8 12.3a6.8 6.8 0 1 1-13.6 0C5.2 10.5 10.2 5.4 12 2zM9 14c0 1.6 1 2.8 2.4 3.2"/></symbol>
   <symbol id="i-ice" viewBox="0 0 24 24"><path d="m12 2 8 5v10l-8 5-8-5V7zM4 7l8 5 8-5m-8 5v10"/></symbol>
+  <symbol id="i-hail" viewBox="0 0 24 24"><path d="m12 2 5 6-5 6-5-6zm-7 12 3 4-3 4-3-4zm12 0 3 4-3 4-3-4z"/></symbol>
+  <symbol id="i-cold" viewBox="0 0 24 24"><path d="M10 4a2 2 0 0 1 4 0v10a5 5 0 1 1-4 0zm2 7v6m4-11h4"/></symbol>
+  <symbol id="i-heat" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/></symbol>
   <symbol id="i-wind" viewBox="0 0 24 24"><path d="M2 8h12a3 3 0 1 0-3-3M2 12h16a3 3 0 1 0 0-6M3 16h8a3 3 0 1 1-3 3"/></symbol>
   <symbol id="i-outlook" viewBox="0 0 24 24"><path d="M3 5h18v15H3zM7 3v4m10-4v4M3 10h18m-14 4h4m3 0h3"/></symbol>
   <symbol id="i-power" viewBox="0 0 24 24"><path d="m13.5 2-9 12h6l-1 8 10-13h-6z"/></symbol>
@@ -63,7 +66,7 @@
     </aside>
     <section class="atlas-column" id="map-stage" aria-labelledby="map-heading">
       <div class="map-toolbar"><h2 id="map-heading">Weather map</h2>
-        <label class="region-field"><span>Region</span><select id="region"><option value="CONUS">Contiguous U.S.</option><option value="WEST">West</option><option value="CENTRAL">Central</option><option value="EAST">East</option><option value="AK">Alaska</option><option value="HI">Hawaiʻi</option><option value="PR">Puerto Rico</option></select></label>
+        <label class="region-field"><span>Go to region</span><select id="region"><option value="CONUS">Contiguous U.S.</option><option value="WEST">West</option><option value="CENTRAL">Central</option><option value="EAST">East</option><option value="AK">Alaska</option><option value="HI">Hawaiʻi</option><option value="PR">Puerto Rico</option></select></label>
       </div>
       <div class="product-bar"><label for="product">Display</label><select id="product">
         <option value="radar">Weather radar reflectivity</option><option value="observations">NWS LSR and PNS reports</option><option value="mpd">WPC Mesoscale Precipitation Discussions</option><option value="alerts">NWS watches, warnings and advisories</option><option value="winter">Winter hazards and forecasts</option>
@@ -108,6 +111,7 @@
     <div class="section-title big-title"><h2 id="report-heading">Observation master list</h2><span id="report-summary" class="caption"></span></div>
     <div id="hazard-tabs" class="hazard-tabs" role="group" aria-label="Filter reports by hazard"></div>
     <div class="report-filters"><label>Source<select id="report-source"><option value="">LSR and PNS</option><option value="LSR">Local Storm Reports</option><option value="PNS">Public Information Statements</option></select></label><label>State or territory<select id="report-state"><option value="">All areas</option></select></label><label>Lookback<select id="report-hours"><option value="6">6 hours</option><option value="12">12 hours</option><option value="24">24 hours</option><option value="48" selected>48 hours</option></select></label><label>Find reports<input type="search" id="report-search" placeholder="Place, office or phenomenon"></label></div>
+    <section class="report-timing" id="report-timing" aria-label="Reports by observation time" hidden></section>
     <div id="report-table"></div><div class="pager" id="report-pager"></div>
   </section>
   <section class="paper issued" aria-labelledby="issued-heading"><div class="section-title small-title"><h2 id="issued-heading">Issued products and handoff</h2></div>

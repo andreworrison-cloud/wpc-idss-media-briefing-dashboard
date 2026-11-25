@@ -37,11 +37,12 @@ export function reportPoint(r) {
   const value=r.trace?'Trace':measurement.trim(), knownQ=r.qualifier&&!/^(unknown|not reported)$/i.test(r.qualifier)?r.qualifier:'';
   const label=r.label||phenomenon, head=value?value+' · '+phenomenon:label;
   const duration=r.durationHours??r.accumulation_hours;
-  const lines=[place,[source==='PNS'?'Public Information Statement':'Local Storm Report',r.office||r.wfo].filter(Boolean).join(' · '),
-    r.measurementType?human(r.measurementType):'',knownQ&&human(knownQ),Number.isFinite(duration)?duration+' h accumulation':r.periodLabel,
-    ...(r.impactFlags||r.impact_flags||[]).map(human),
-    (r.observedAt||r.valid)?'Observed '+utc(r.observedAt||r.valid):'Observation time unavailable',
-    (r.issuedAt||r.issued)?'Issued '+utc(r.issuedAt||r.issued):''].filter(Boolean);
+  const lines=[place,(r.observedAt||r.valid)?'Observed '+utc(r.observedAt||r.valid):'Observation time unavailable',
+    [source==='PNS'?'Public Information Statement':'Local Storm Report',r.office||r.wfo].filter(Boolean).join(' · '),
+    Number.isFinite(duration)?duration+' h accumulation':r.periodLabel,
+    [r.measurementType&&human(r.measurementType),knownQ&&human(knownQ)].filter(Boolean).join(' · '),
+    (r.issuedAt||r.issued)?'Issued '+utc(r.issuedAt||r.issued):'',
+    ...(r.impactFlags||r.impact_flags||[]).map(human)].filter(Boolean);
   return {id:r.id,lat,lon,cat,source,color:POINT_COLORS[cat],title:head,place,lines,detail:lines.join(' · '),
     url:r.url||r.source_url,value,record:r};
 }
@@ -77,11 +78,11 @@ export function observationsOnMap(L,map,target,rows,{onDetail,source='all',categ
   const zoom=map.getZoom(), box=map.getBounds().pad(.15), buckets=new Map(), index=new Map();
   const width=map.getSize().x<600?32:zoom<5?31:26;
   const clusters=[];
-  const sourceKey=source.toUpperCase();
+  const sourceKey=source.toUpperCase(), near=lon=>lon+360*Math.round((map.getCenter().lng-lon)/360);
   for(const info of rows) {
     if(!info||category!=='all'&&info.cat!==category||sourceKey!=='ALL'&&info.source!==sourceKey)continue;
     index.set(info.id,info);
-    const at=L.latLng(info.lat,info.lon);if(!box.contains(at)&&!(box.getWest()<-180&&box.contains([at.lat,at.lng-360])))continue;
+    const at=L.latLng(info.lat,near(info.lon));if(!box.contains(at))continue;
     // A symbol stays on the first source coordinate in that cell. It advertises the report count.
     const px=map.latLngToContainerPoint(at),x=Math.floor(px.x/width),y=Math.floor(px.y/width);
     let found=null,best=width;
@@ -98,7 +99,7 @@ export function observationsOnMap(L,map,target,rows,{onDetail,source='all',categ
     }
   }
   for(const {records} of clusters){
-    const first=records[0],more=records.length-1,at=L.latLng(first.lat,first.lon);
+    const first=records[0],more=records.length-1,at=L.latLng(first.lat,near(first.lon));
     const info=more?{...first,kind:[...new Set(records.map(r=>r.source))].filter(Boolean).join(' / ')+' · '+records.length+' reports',
       title:first.title,lines:[first.place,...first.lines.filter(v=>v!==first.place).slice(0,3),more+' additional nearby report'+(more===1?'':'s')]}:first;
     const marker=L.marker(at,{icon:pointIcon(L,doc,first,records.length,zoom>=6.2),alt:info.title,title:'',keyboard:true,autoPanOnFocus:false,pane:'idss-points',
@@ -107,11 +108,15 @@ export function observationsOnMap(L,map,target,rows,{onDetail,source='all',categ
     marker.getElement()?.setAttribute('aria-label',[info.title,info.place,info.kind||info.source].filter(Boolean).join(', '));
     marker.getElement()?.setAttribute('data-observation-id',String(first.id||''));
     if(more)marker.bindPopup(()=>{
-      const el=detailNode(doc,info,true),list=doc.createElement('div');list.className='idss-nearby-list';
+      const wrapper=doc.createElement('div'), overview=detailNode(doc,info,true), list=doc.createElement('div');list.className='idss-nearby-list';
       for(const record of records.slice(1)){
         const item=doc.createElement('button');item.type='button';item.textContent=[record.title,record.place].filter(Boolean).join(' · ');
-        item.onclick=()=>{marker.setPopupContent(detailNode(doc,record,true));onDetail?.(record);};list.append(item);
-      }el.append(list);return el;
+        item.onclick=()=>{
+          const detail=detailNode(doc,record,true), back=doc.createElement('button');
+          back.type='button';back.textContent='All nearby reports';back.onclick=()=>wrapper.replaceChildren(overview);
+          detail.append(back);wrapper.replaceChildren(detail);onDetail?.(record);
+        };list.append(item);
+      }overview.append(list);wrapper.append(overview);return wrapper;
     },{maxWidth:345,maxHeight:300,className:'idss-geo-popup'});
     if(selected===first.id)marker.openPopup();
   }

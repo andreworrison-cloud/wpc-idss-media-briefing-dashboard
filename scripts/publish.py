@@ -19,7 +19,7 @@ RAW_KEYS = {'remarks', 'reporter', 'reporter_name', 'reported_by', 'email', 'spr
 IMPACT_HOSTS = ('noaa.gov', 'weather.gov', 'iastate.edu', 'poweroutmap.com', 'poweroutage.us', 'ornl.gov', 'census.gov', 'faa.gov', 'flightaware.com', 'dot.gov', 'bts.gov')
 WEATHER_HOSTS = ('noaa.gov', 'weather.gov', 'iastate.edu')
 ASSETS = (
-    'alert-zones.js', 'barlow.woff2', 'barlowcondensed-license.txt', 'briefing.css', 'briefing.js',
+    'alert-zones.js', 'barlow.woff2', 'barlowcondensed-license.txt', 'briefing.css', 'briefing.js', 'browser-radar.js',
     'command-map.css', 'command-map.js', 'conus-reference.webp', 'county-reference.js', 'dm-sans.woff2',
     'dmsans-license.txt', 'geo-reference.json', 'geographic-base.js', 'hazard-palette.js', 'impact-logic.js',
     'impacts.js', 'leaflet/LICENSE', 'leaflet/images/layers-2x.png', 'leaflet/images/layers.png',

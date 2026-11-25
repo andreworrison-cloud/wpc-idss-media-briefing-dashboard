@@ -1,6 +1,8 @@
 import {readRelease} from './release.js';
+import {currentRadar} from './browser-radar.js';
 import {renderImpacts,selectedExposure,powerLevel,setPowerLevel} from './impacts.js';
 import {exposureRecords,currentGroundReports,impactNames} from './impact-logic.js';
+import {inkFor} from './hazard-palette.js';
 import {officeCodes} from './offices.js';
 import {labels,refs,safeURL,isoTime,dayName,readable,moduleState,activeDay,activeOutlook,currentAlerts,priorities,messageState,population,makeBrief,parseScope} from './logic.js';
 import {mountObservationDesk,appendObservedBrief,reportPresentation} from './observed-graphics.js';
@@ -42,12 +44,15 @@ function writeLegend(result) {
   $('map-legend').innerHTML=items.map(x=>{
     const color=/^#[0-9a-f]{3,8}$/i.test(x.color||'')?x.color:'#69818a';
     const shape=String(x.shape||'square').toLowerCase().replace(/[^a-z-]/g,'');
-    return '<span class="legend-item"><i class="'+shape+'" style="--swatch:'+color+'"></i>'+esc(x.label||x.name||'')+'</span>';
+    const icons={snow:'snow',ice:'ice',rain:'rain',wind:'wind',hail:'hail',cold:'cold',heat:'heat',effect:'alert',plane:'plane',gauge:'ground',impact:'ground'};
+    const icon=icons[shape];
+    const mark=icon?'<span class="legend-glyph" aria-hidden="true" style="--swatch:'+color+';--glyph-ink:'+inkFor(color)+'"><svg><use href="#i-'+icon+'"/></svg></span>':'<i class="'+shape+'" style="--swatch:'+color+'"></i>';
+    return '<span class="legend-item">'+mark+esc(x.label||x.name||'')+'</span>';
   }).join('');
-  $('map-phase').textContent=data.phase||'';
   const weather=board?.weather||{}, obj=product==='radar'?weather.radar:product==='mpd'?weather.mpd:product==='winter'?weather.winter?.layers?.find(l=>l.id===$('winter-layer').value):null;
   let href=obj?.source_url;
-  if(product==='radar')href=obj?.dashboard_url||obj?.source_data_url||obj?.source_url;
+  $('map-phase').textContent=product==='radar'&&obj?[obj.domain,obj.units].filter(Boolean).join(' · '):data.phase||'';
+  if(product==='radar')href=obj?.source_url||obj?.source_data_url||obj?.dashboard_url;
   const label=product==='radar'?(obj?.provider||'Radar source'):product==='mpd'?'WPC MetWatch':'Official product';
   $('map-foot').innerHTML=esc(data.note||'')+(publicURL(href)?' · '+source(href,label):'');
 }
@@ -166,9 +171,9 @@ $('catalog-search').oninput=()=>{catalogPage=0;if(board)renderCatalog();};$('cat
 $('catalog').onclick=e=>{const b=e.target.closest('[data-catalog]');if(!b)return;const row=catalogRows[Number(b.dataset.catalog)];showMap(row.type==='NWS alert'?'alerts':'outlook',true);map?.focus({...row.item,title:row.title,url:row.href});writeDetail({title:row.title,lines:[row.area,row.period].filter(Boolean),url:row.href});};
 function renderSources() {
   const w=board.weather||{}, obs=w.observations||{}, src=obs.sources||{};
-  const entries=[['Radar reflectivity',w.radar,w.radar?.valid_time,w.radar?.checked_at,w.radar?.dashboard_url||w.radar?.source_data_url||w.radar?.source_url],['WPC Mesoscale Precipitation Discussions',w.mpd,w.mpd?.features?.[0]?.properties?.issued,w.mpd?.checked_at,w.mpd?.source_url],['Winter products',w.winter,w.winter?.collected_at,w.winter?.retrieved_at,'https://www.weather.gov/wssi/'],['NWS Local Storm Reports',src.lsr,src.lsr?.latestIssuedAt,obs.checkedAt,src.lsr?.sourceUrl],['NWS Public Information Statements',src.pns,src.pns?.latestIssuedAt,obs.checkedAt,src.pns?.sourceUrl]];
+  const entries=[['Radar reflectivity',w.radar,w.radar?.valid_time,w.radar?.checked_at,w.radar?.source_url||w.radar?.source_data_url||w.radar?.dashboard_url],['WPC Mesoscale Precipitation Discussions',w.mpd,w.mpd?.features?.[0]?.properties?.issued,w.mpd?.checked_at,w.mpd?.source_url],['Winter products',w.winter,w.winter?.collected_at,w.winter?.retrieved_at,'https://www.weather.gov/wssi/'],['NWS Local Storm Reports',src.lsr,src.lsr?.latestIssuedAt,obs.checkedAt,src.lsr?.sourceUrl],['NWS Public Information Statements',src.pns,src.pns?.latestIssuedAt,obs.checkedAt,src.pns?.sourceUrl]];
   const health=v=>!v?'Unavailable':v.fresh_until&&Date.parse(v.fresh_until)<=Date.now()?'Stale':readable(v.status||'unavailable');
-  $('weather-source-rows').innerHTML=table(['Product','Coverage','Product / latest issue','Collection','Evidence'],entries.map(([name,v,t,check,url])=>[esc(name),esc(health(v)),esc(time(t)),esc(time(check)),source(url,'Source')]));
+  $('weather-source-rows').innerHTML=table(['Product','Coverage','Product / latest issue','Collection','Evidence'],entries.map(([name,v,t,check,url])=>[esc(name)+(v?.note?'<small>'+esc(v.note)+'</small>':''),esc(health(v)),esc(time(t)),esc(time(check)),source(url,'Source')]));
   $('sources-table').innerHTML=table(['Source','Status','Collection','Evidence'],Object.entries(labels).map(([key,label])=>[esc(label),esc(readable(moduleState(board,key))),esc(time(board.attempts?.[key]?.checked_at||board.health?.[key]?.retrieved_at)),source(refs[key],'Source')]));
   const p=population(board);$('pop-source').innerHTML=p?'<details><summary>Published WPC Day 1 risk-category population</summary><p class="caption">'+esc(p.basis)+' · Issued '+esc(time(p.issued))+'</p>'+table(['WPC category','Population','Area (mi²)'],p.bands.map(r=>[esc(r.risk),fmt(r.population),fmt(r.area_sq_mi)]))+source(p.source_url,'Official WPC estimate')+'</details>':'';
 }
@@ -214,8 +219,17 @@ function render() {
 }
 async function refresh(){
   if(loading)return; loading=true;$('refresh').disabled=true;
-  try{board=await readRelease('board');render();}
-  catch{if(board){$('sync-status').textContent='Refresh unavailable · Saved '+time(board.revision);}else{$('sync-status').textContent='Current briefing collection unavailable';reports.update(null);for(const id of ['priorities','ground-panel','exposure-panel'])$(id).textContent='Current collection unavailable.';
+  try{
+    const snapshot=await readRelease('board');
+    board=snapshot;render();
+    const radar=await currentRadar(snapshot);
+    if(board===snapshot && radar && radar!==snapshot.weather?.radar){
+      board={...snapshot,weather:{...snapshot.weather,radar}};
+      configureProducts();updateMap(true);renderSources();
+    }
+  }
+  catch{if(board){$('sync-status').textContent='Refresh unavailable · Saved '+time(board.revision);}else{$('sync-status').textContent='Current briefing collection unavailable';reports.update(null);for(const id of ['priorities','ground-panel','exposure-panel','weather-source-rows','impact-source-rows','sources-table'])$(id).textContent='Current collection unavailable.';
+    $('brief-output').textContent='A current collection is required to generate a source-linked briefing.';
     $('power-panel').innerHTML='<p>Current utility figures are unavailable. '+source('https://poweroutage.us/','PowerOutage.us map')+' · '+source('https://poweroutmap.com/','Power Out Map')+'</p>';
     $('aviation-panel').innerHTML='<p>Current FAA notices are unavailable. '+source('https://nasstatus.faa.gov/','FAA status')+' · '+source('https://www.flightaware.com/live/cancelled/today/US','U.S. flight delays and cancellations on FlightAware')+'</p>';if(!mapModuleFailed)$('map-foot').textContent='Current weather layers unavailable.';}}
   finally{loading=false;$('refresh').disabled=false;}

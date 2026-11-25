@@ -1,4 +1,3 @@
-const NS = 'http://www.w3.org/2000/svg';
 const tileSource = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}';
 const attribution = '<a href="https://www.usgs.gov/programs/national-geospatial-program/national-map" target="_blank" rel="noopener">USGS The National Map</a>';
 export const MAP_REGIONS = Object.freeze({
@@ -76,7 +75,7 @@ export function mountBase(L,map,{root=ASSET_ROOT,onStatus,tiles=true,onReference
   function drawLabels() {
     if(!reference)return;
     const z=map.getZoom(), band=z<3.35?'far':z<5.7?'state':z<8?'city':'close';
-    const online=loaded>0&&errors<loaded;
+    const online=loaded>0&&errors<loaded;map.getPane('idss-borders').style.opacity=z>=8&&online?'.20':'1';
     // Remote tiles include place names. National state abbreviations stay visible above radar.
     const key=band+online;if(key===previousLabelBand)return;previousLabelBand=key;labels.clearLayers();
     if(band==='state'||(band==='city'&&!online)){
@@ -89,14 +88,14 @@ export function mountBase(L,map,{root=ASSET_ROOT,onStatus,tiles=true,onReference
     clearTimeout(timer);
     timer=setTimeout(()=>{
       if(destroyed)return;drawLabels();
-      if(errors>0&&loaded===0)onStatus?.({layer:'basemap',status:'partial',message:'Local geographic reference in use. Detailed USGS tiles are unavailable.'});
+      if(errors>0)onStatus?.({layer:'basemap',status:'partial',message:loaded?'Local geography fills gaps in the USGS tile coverage.':'Local geographic reference in use. Detailed USGS tiles are unavailable.'});
       else if(loaded>0)onStatus?.({layer:'basemap',status:'current',message:'USGS topographic reference'});
     },220);
   }
   if(tiles) {
     basemap=L.tileLayer(typeof tiles==='string'?tiles:tileSource,{maxZoom:16,maxNativeZoom:16,minZoom:2,keepBuffer:1,
       pane:'tilePane',className:'idss-usgs-tiles',updateWhenIdle:true,updateWhenZooming:false});
-    basemap.on('tileload',()=>{loaded++;tileStatus();}).on('tileerror',()=>{errors++;tileStatus();}).addTo(map);
+    basemap.on('loading',()=>{loaded=0;errors=0;}).on('tileload',()=>{loaded++;tileStatus();}).on('tileerror',()=>{errors++;tileStatus();}).addTo(map);
   }
   loadReference(root).then(g=>{
     if(destroyed)return;reference=g;

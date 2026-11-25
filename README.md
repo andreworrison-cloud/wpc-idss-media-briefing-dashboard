@@ -2,11 +2,11 @@
 
 [Open the map](https://andreworrison-cloud.github.io/wpc-idss-media-briefing-dashboard/) · [Prepare a media brief](https://andreworrison-cloud.github.io/wpc-idss-media-briefing-dashboard/#brief) · [Inspect source status](https://andreworrison-cloud.github.io/wpc-idss-media-briefing-dashboard/#sources)
 
-The map opens on dated radar reflectivity. Select a forecast, measured report, or infrastructure product in the map controls. The observation index filters by hazard, state, issuing office or place, source and observation window. Selected resident footprints can be carried into a state-scoped, printable media brief with numbered evidence links. All times are UTC.
+The map opens on dated radar reflectivity. Select a forecast, measured report, or infrastructure product in the map controls. The observation index filters by hazard, state, issuing office or place, source and observation window. The observation-time chart compares LSR and PNS counts. Select an interval to narrow the list. Selected resident footprints can be carried into a state-scoped, printable media brief with numbered evidence links. All times are UTC.
 
 | View | Source and interpretation |
 | --- | --- |
-| Radar | The current, commit-pinned MRMS lowest-altitude reflectivity mosaic and its recent frames from the public Hydro Dashboard. If MRMS is late, IDSS checks a separately dated IEM NEXRAD base reflectivity image. The legend and source change with the product. Coverage is CONUS. |
+| Radar | The current, commit-pinned MRMS lowest-altitude reflectivity mosaic and its recent frames from the public Hydro Dashboard. If MRMS is late, IDSS checks a separately dated IEM NEXRAD base reflectivity image. The legend and source change with the product. An open viewer can verify a newer frame directly if a scheduled snapshot ages out. Coverage is CONUS. |
 | WPC MPDs | Bulletin polygons, affected area, concerning line and validity period. The WPC active list and recent NWS distribution distinguish a quiet period from a source outage. |
 | Winter weather | NWS watches, warnings and advisories use their official storm polygons or named forecast zones. WPC WSSI has Day 1, 2, 3 and combined periods. Snow and ice probabilities have separate thresholds and valid times. NOHRSC supplies the dated snow depth and snow-water-equivalent analyses. IDSS reads the public NOAA sources used by the Winter Weather Dashboard. |
 | LSRs and Public Information Statements | NWS preliminary reports and structured observations in published statements. Hover or tap for location, amount, accumulation period where stated, observation time and source. Records without a source position remain in the list. Chart maxima cover the available reports and measurement periods. |

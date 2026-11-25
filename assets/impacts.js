@@ -58,7 +58,7 @@ function powerPanel(p,onMap) {
   const mapPick=formSelect('outage-level','Heatmap geography',[['auto','Auto · states to counties',selected.powerLevel==='auto'],['state','States',selected.powerLevel==='state'],['county','Counties',selected.powerLevel==='county']]);
   const bars=rows.map(r=>`<li class="impact-rank"><span>${esc(r.name)}</span><span class="rank-bar" aria-hidden="true"><i style="width:${100*r.customers_out/max}%"></i></span><b>${countText(r.customers_out)}</b></li>`).join('');
   target.innerHTML=(live?summary(countText(p.customers_out),'electric customer accounts without power')+note([Number.isFinite(p.reporting_utilities)?countText(p.reporting_utilities)+' utilities reporting':null,Number.isFinite(p.coverage_percent)?pct(p.coverage_percent)+' estimated customer coverage':null].filter(Boolean).join(' · ')) :unavailable('utility',p))+
-    (bars?`<h4>States with the most reported outages</h4><ol class="impact-ranks">${bars}</ol>`:'')+countyDetails+mapPick+note('An account may serve a home or business. Unreported counties appear hatched. The utility counts include outages from all causes.')+sourceLine([url(links.power,'Data from Power Out Map'),url(links.powerTracker,'PowerOutage.us map')],p?.as_of);
+    (bars?`<h4>States with the most reported outages</h4><ol class="impact-ranks">${bars}</ol>`:'')+countyDetails+mapPick+note('An account may serve a home or business. Light gray marks areas with no mapped report. The utility counts include outages from all causes.')+sourceLine([url(links.power,'Data from Power Out Map'),url(links.powerTracker,'PowerOutage.us map')],p?.as_of);
   byId('outage-level').onchange=e=>{setPowerLevel(e.target.value);onMap('power',true);};
 }
 function airPanel(a) {

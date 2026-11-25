@@ -9,8 +9,6 @@ export {MAP_REGIONS};
 const GOOD=new Set(['ok','current','partial','active','published','none']);
 const fmt=n=>Number.isFinite(n)?n.toLocaleString('en-US'):'';
 const cleanColor=s=>/^#[0-9a-f]{6}$/i.test(s||'')?s:'#617C8C';
-const emptyGeo=()=>({title:'',lines:[]});
-const truthy=v=>Array.isArray(v)?v.filter(Boolean):[];
 const period=(a,b)=>[utc(a),utc(b)].filter(Boolean).join(' – ');
 const key=(label,color,shape='square')=>({label,color,shape});
 const safeSource=value=>{try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password?u.href:null;}catch{return null;}};
@@ -44,7 +42,7 @@ export function mountCommandMap(container,options={}) {
   const scene=L.layerGroup().addTo(map), reportsLayer=L.layerGroup().addTo(map), selectedLayer=L.layerGroup().addTo(map);
   const state={board:null,product:'ero1',reportHours:48,observation:'all',source:'all',winterLayer:'wssi_d1_3',radarFrame:null,
     layers:{alerts:false,reports:true,radar:false,winter:false,mpds:true,counties:false}};
-  let dead=false,ref=null,points=[],pointIndex=new Map(),pointTimer,epoch=0,selectionEpoch=0,legendSerial='',lastLegend=null;
+  let dead=false,ref=null,points=[],pointIndex=new Map(),pointTimer,autopanning=false,selectionEpoch=0,legendSerial='',lastLegend=null;
   let countyLayer=null,countyEpoch=0,countyRenderer=null;
   let powerLayer=null,powerImport=null,powerSignature=null,powerLegend=[],previousPowerMode=null,previousPowerActive=null;
   const zoneCache=new Map();
@@ -298,7 +296,8 @@ export function mountCommandMap(container,options={}) {
     if(isPower(state.product)&&(typeof input==='string'||input.fips)&&powerLayer)return powerLayer.focus(typeof input==='string'?input:input.fips,{popup:true});
     if(typeof input==='string')input={id:input};
     const poi=pointIndex.get(input.id)||points.find(p=>p.id===input.id);
-    const record=poi||input,lat=record.latitude??record.lat,lon=record.longitude??record.lon;
+    const alert=state.board&&input.id&&!poi?currentAlerts(state.board,nowValue(options.now)).find(a=>a.id===input.id):null;
+    const record=poi||alert||input,lat=record.latitude??record.lat,lon=record.longitude??record.lon;
     const geo=record.geometry, g=Array.isArray(geo)?geo:geo?.type==='Feature'?[geo.geometry]:geo?[geo]:[];
     const tag=++selectionEpoch;selectedLayer.clearLayers();
     const info={title:record.title||record.label||record.name||'Selected location',detail:record.detail||record.area||'',
@@ -325,9 +324,12 @@ export function mountCommandMap(container,options={}) {
   }
   syncView();
   function viewChanged() {
-    if(dead)return;syncView();drawCounties();clearTimeout(pointTimer);pointTimer=setTimeout(()=>{if(!dead)drawPoints();},45);
+    if(dead)return;syncView();drawCounties();clearTimeout(pointTimer);
+    if(autopanning)autopanning=false;else pointTimer=setTimeout(()=>{if(!dead)drawPoints();},45);
     options.onViewChange?.({center:map.getCenter(),zoom:map.getZoom(),bounds:map.getBounds()});
   }
+  map.on('autopanstart',()=>{autopanning=true;clearTimeout(pointTimer);});
+  map.on('popupopen',()=>clearTimeout(pointTimer));
   map.on('moveend zoomend',viewChanged);
   const resize=typeof ResizeObserver!=='undefined'?new ResizeObserver(()=>{if(!dead)map.invalidateSize({pan:false,debounceMoveend:true});}):null;resize?.observe(container);
   return {map,update,region,focus,focusOutage:(query,opts={popup:true})=>powerLayer?.focus(query,opts)??false,zoomBy:n=>map.setZoom(map.getZoom()+Number(n||0)),invalidateSize:()=>map.invalidateSize({pan:false}),
