@@ -250,3 +250,10 @@ main { max-width: 1920px; }
   #measure-graphics { gap:6px 10px; }
   .brand { font-size:15px; }.utc-clock { font-size:10px; }
 }
+
+.radar-scale { display:flex; align-items:center; gap:10px; width:100%; padding:2px 0 3px; color:#e1edf4; }
+.radar-scale b { font:650 12px/1.25 var(--body); white-space:nowrap; }
+.radar-scale b span { color:#c1d3df; font-weight:500; }
+.radar-scale>div { display:flex; width:min(340px,65%); height:23px; }
+.radar-bin { display:block; border-top:7px solid var(--bin); text-align:left; }
+.radar-bin small { font:10px/15px var(--mono); }

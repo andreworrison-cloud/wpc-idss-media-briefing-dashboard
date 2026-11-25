@@ -68,3 +68,16 @@
 .idss-map[data-basemap=dark] .idss-hazard-name{border-color:#809ba8;border-left-color:var(--hazard-color);background:#11273aef;color:#eef7fa}
 .idss-report-label-box .idss-label-scope{display:block;margin-bottom:1px;font:600 9px/1.15 "DM Sans",Arial,sans-serif;letter-spacing:.035em;color:#405f72}
 .idss-map[data-basemap=dark] .idss-label-scope{color:#b9d2de}
+
+/* The label sits outside the polygon. The stem ends at its actual boundary vertex. */
+.hazard-leader { display:block; position:relative; width:0; height:0; }
+.hazard-leader::before {
+  content:""; position:absolute; width:24px; height:1.5px; background:#f1f7fc; box-shadow:0 0 1.5px #102739;
+  left:0; top:0; transform-origin:0 50%; transform:rotate(-135deg);
+}
+.hazard-leader.right::before { transform:rotate(-45deg); }
+.hazard-leader::after {
+  content:""; position:absolute; left:-3px; top:-3px; width:7px; height:7px; border-radius:50%;
+  border:1.5px solid #fff; background:var(--hazard-color); box-shadow:0 0 0 1.5px #132e44;
+}
+.hazard-leader .idss-hazard-name { bottom:16px; }

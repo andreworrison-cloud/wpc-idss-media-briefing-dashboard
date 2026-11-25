@@ -291,12 +291,17 @@ export function mountCommandMap(container,options={}) {
     const tag=doc.createElement('span');tag.className='idss-hazard-name';
     tag.textContent=briefingCache.label||a.info.title;tag.style.setProperty('--hazard-color',a.color);
     tag.setAttribute('data-testid','idss-briefing-label');
-    const width=Math.min(175,Math.max(95,tag.textContent.length*6+20)),left=a.xy.x<width+12?4:-width+4;
+    const width=Math.min(175,Math.max(95,tag.textContent.length*6+20));
+    const toRight=a.xy.x<width+24, left=toRight?14:-width-14;
     tag.style.width=width+'px';tag.style.left=left+'px';
-    const marker=L.marker(a.at,{icon:L.divIcon({html:tag,className:'idss-hazard-anchor',iconSize:[0,0],iconAnchor:[0,0]}),
+    const anchor=doc.createElement('span');
+    anchor.className=toRight?'hazard-leader right':'hazard-leader';
+    anchor.style.setProperty('--hazard-color',a.color);
+    anchor.append(tag);
+    const marker=L.marker(a.at,{icon:L.divIcon({html:anchor,className:'idss-hazard-anchor',iconSize:[0,0],iconAnchor:[0,0]}),
       pane:'idss-labels',interactive:false,keyboard:false}).addTo(reportsLayer);
     marker.getElement()?.setAttribute('aria-hidden','true');
-    return [[a.xy.x+left-3,a.xy.y-33,a.xy.x+left+width+3,a.xy.y+3]];
+    return [[a.xy.x+left-3,a.xy.y-45,a.xy.x+left+width+3,a.xy.y+4]];
   }
   function drawReportLabels(featured,boxes,scope){
     const size=map.getSize(),center=map.getCenter().lng;

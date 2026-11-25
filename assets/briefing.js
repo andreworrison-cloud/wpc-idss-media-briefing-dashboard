@@ -42,7 +42,21 @@ function writeLegend(result) {
   const data=legend;
   if(!data)return;
   const items=data.items||[];
-  $('map-legend').innerHTML=items.map(x=>{
+  const radarBins=items.filter(x=>/^-?\d+(?:\.\d+)? dBZ$/i.test(x.label) && /^#[a-f0-9]{6}$/i.test(x.color))
+    .map(x=>({value:parseFloat(x.label),color:x.color,item:x})).sort((a,b)=>a.value-b.value);
+  // Use the provider's numeric bins. Keep a provider's categorical or irregular legend intact.
+  const gap=radarBins.length>1 ? radarBins[1].value-radarBins[0].value : 0;
+  const continuous=radarBins.length>=4 && gap>0 && radarBins.every((b,i)=>i===0||b.value-radarBins[i-1].value===gap);
+  const hiddenItems=new Set(continuous?radarBins.map(b=>b.item):[]);
+  const focusKey=$('map-focus-key');
+  const symbols=items.filter(x=>!hiddenItems.has(x) && (focusKey.hidden||x.label!==focusKey.textContent));
+  const binWidth=100/radarBins.length;
+  const steps=continuous?radarBins.map((b,i)=>{
+    const tick=i===0||i===radarBins.length-1||i%Math.ceil(radarBins.length/5)===0;
+    return '<span class="radar-bin" title="'+b.value+' dBZ" style="width:'+binWidth+'%;--bin:'+b.color+'">'+(tick?'<small>'+b.value+'</small>':'')+'</span>';
+  }).join(''):'';
+  const strip=continuous?'<div class="radar-scale" role="img" aria-label="Radar reflectivity scale in dBZ: '+radarBins.map(b=>b.value).join(', ')+'"><b>Reflectivity <span>(dBZ)</span></b><div>'+steps+'</div></div>':'';
+  $('map-legend').innerHTML=strip+symbols.map(x=>{
     const color=/^#[0-9a-f]{3,8}$/i.test(x.color||'')?x.color:'#69818a';
     const shape=String(x.shape||'square').toLowerCase().replace(/[^a-z-]/g,'');
     const icons={snow:'snow',ice:'ice',rain:'rain',wind:'wind',hail:'hail',cold:'cold',heat:'heat',effect:'alert',plane:'plane',gauge:'ground',impact:'ground'};

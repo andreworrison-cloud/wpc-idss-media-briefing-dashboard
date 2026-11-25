@@ -58,6 +58,8 @@ def check(url):
         wait("window.qaWeather && document.querySelector('[data-testid=idss-states]')", 'Geographic reference')
         if js("return qaWeather.radar.status==='current' && Date.parse(qaWeather.radar.fresh_until)>Date.now()"):
             wait("document.querySelector('[data-testid=idss-radar-raster]')?.naturalWidth>0", 'Time-labeled radar image loads in Chrome')
+            if js("return qaWeather.radar.provider?.includes('MRMS') && qaWeather.radar.color_table?.length===15"):
+                wait("document.querySelectorAll('#map-legend .radar-bin').length===15", 'All calibrated reflectivity colors appear on the radar scale')
         wait("document.querySelector('#focus-headline') && !document.querySelector('#focus-headline').textContent.startsWith('Loading')", 'Opening briefing resolves')
         def on_screen(selector):
             return js(f"const r=document.querySelector({json.dumps(selector)}).getBoundingClientRect(); return r.width>0 && r.top>=0 && r.top+30<innerHeight")
