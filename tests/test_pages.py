@@ -106,7 +106,7 @@ class PagesTests(unittest.TestCase):
         self.assertIn('workflow_dispatch:', workflow)
         self.assertIn('7,17,27,37,47,57 * * * *', workflow)
         js = (ROOT/'assets/briefing.js').read_text()
-        self.assertIn("readRelease('board')", js)
+        self.assertRegex(js, r"readRelease\(\s*'board'\s*[,)]")
         self.assertIn("readRelease('handoff')", js)
         self.assertNotIn("fetch('/api/", js)
 
