@@ -19,9 +19,16 @@ The map uses [weather.gov alert colors and priorities](https://www.weather.gov/h
 
 ## Automated publication
 
-The dedicated IDSS workflow publishes the complete dashboard on a main-branch push or a workflow dispatch. To refresh every ten minutes, configure cron-job.org to send an authenticated POST to `https://api.github.com/repos/andreworrison-cloud/wpc-idss-media-briefing-dashboard/actions/workflows/publish.yml/dispatches` with the JSON body `{"ref":"main"}`. A fine-grained GitHub token for this repository requires the Actions write permission. Store the credential in the scheduler’s authorization header. Each run reads the collector, updates the independent feeds, validates the public data, and verifies the live JSON and HTML after deployment. Main-branch pushes also exercise the desktop and phone layouts in Chrome. Select the browser checks option to run these checks on a manual dispatch.
+cron-job.org runs two IDSS jobs every ten minutes, around the clock.
 
-The public collector’s `/api/refresh` endpoint checks the live weather and infrastructure feeds. Radar snapshots, geolocated PNS observations, winter products, and Census exposure estimates update through the full publication workflow. Each panel retains its own source time and freshness status. Open tabs check for updates every two minutes.
+| Minutes past each UTC hour | Job |
+| --- | --- |
+| 00, 10, 20, 30, 40, 50 | Check the live weather, aviation and power feeds through the public collector’s `/api/refresh` endpoint. |
+| 03, 13, 23, 33, 43, 53 | Start the complete IDSS publication, including radar snapshots, MPDs, winter products, geolocated LSR and PNS observations, river impacts and Census exposure estimates. |
+
+The publication job sends an authenticated POST to `https://api.github.com/repos/andreworrison-cloud/wpc-idss-media-briefing-dashboard/actions/workflows/publish.yml/dispatches` with the JSON body `{"ref":"main"}`. Its fine-grained GitHub credential has Actions write access to this repository. Each publication verifies the live JSON and HTML after deployment. Every panel retains its own source time and freshness status. Open tabs check for updates every two minutes.
+
+Main-branch pushes also publish the dashboard and exercise the desktop and phone layouts in Chrome. To request the same browser checks during a manual dispatch, select the browser checks option.
 
 The IDSS workflow accesses published Hydro assets and NOAA endpoints read-only. The upstream public collector provides NWS alerts, preliminary local storm reports, WPC rainfall, winter and medium-range hazards, Key Messages and archived shift handoffs. Private staging, credentials and raw reports are excluded from this repository. GitHub Pages can serve the same root viewer from the Actions artifact or the default branch during a code update. The dedicated `idss-public-current` data branch holds one reviewed board and shift edition for branch publishing. A guarded update replaces only its generated files.
 
