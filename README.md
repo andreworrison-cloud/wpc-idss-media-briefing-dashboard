@@ -19,7 +19,16 @@ The map uses [weather.gov alert colors and priorities](https://www.weather.gov/h
 
 ## Automated publication
 
-This repository owns its GitHub Pages workflow. It checks at minutes 07, 17, 27, 37, 47 and 57 UTC each hour, on main-branch pushes, and on manual dispatch. GitHub schedules are best effort. Each job reads the dedicated IDSS collector, obtains the independent impact feeds, validates the public evidence and publishes the completed release. A source failure is labeled on its own panel. Open tabs check the website every two minutes and age out expired figures. The site’s static JSON and HTML are verified after each deployment. Main-branch releases also exercise the website in desktop and phone Chrome viewports.
+cron-job.org runs two IDSS jobs every ten minutes, around the clock.
+
+| Minutes past each UTC hour | Job |
+| --- | --- |
+| 00, 10, 20, 30, 40, 50 | Check the live weather, aviation and power feeds through the public collector’s `/api/refresh` endpoint. |
+| 03, 13, 23, 33, 43, 53 | Start the complete IDSS publication, including radar snapshots, MPDs, winter products, geolocated LSR and PNS observations, river impacts and Census exposure estimates. |
+
+The publication job sends an authenticated POST to `https://api.github.com/repos/andreworrison-cloud/wpc-idss-media-briefing-dashboard/actions/workflows/publish.yml/dispatches` with the JSON body `{"ref":"main"}`. Its fine-grained GitHub credential has Actions write access to this repository. Each publication verifies the live JSON and HTML after deployment. Every panel retains its own source time and freshness status. Open tabs check for updates every two minutes.
+
+Main-branch pushes also publish the dashboard and exercise the desktop and phone layouts in Chrome. To request the same browser checks during a manual dispatch, select the browser checks option.
 
 The IDSS workflow accesses published Hydro assets and NOAA endpoints read-only. The upstream public collector provides NWS alerts, preliminary local storm reports, WPC rainfall, winter and medium-range hazards, Key Messages and archived shift handoffs. Private staging, credentials and raw reports are excluded from this repository. GitHub Pages can serve the same root viewer from the Actions artifact or the default branch during a code update. The dedicated `idss-public-current` data branch holds one reviewed board and shift edition for branch publishing. A guarded update replaces only its generated files.
 
