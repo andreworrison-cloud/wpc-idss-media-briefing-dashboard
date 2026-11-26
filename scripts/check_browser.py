@@ -1,6 +1,7 @@
 """Exercise the public map, observations, briefing and phone layout in Chrome."""
 import base64
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -30,6 +31,8 @@ def check(url):
                 if api('/status')['ready']: break
             except OSError: time.sleep(.2)
         capabilities={'browserName':'chrome','goog:chromeOptions':{'args':['--headless=new','--no-sandbox','--disable-dev-shm-usage','--window-size=1440,1050']}}
+        if os.environ.get('CHROME_BIN'):
+            capabilities['goog:chromeOptions']['binary']=os.environ['CHROME_BIN']
         session=api('/session',{'capabilities':{'alwaysMatch':capabilities}})['sessionId']
         prefix='/session/'+session
         def js(code):return api(prefix+'/execute/sync',{'script':code,'args':[]})
@@ -43,14 +46,21 @@ def check(url):
             (target/(name+'.png')).write_bytes(base64.b64decode(api(prefix+'/screenshot')))
         def select(id_, value):
             js(f"const e=document.getElementById({json.dumps(id_)}); e.value={json.dumps(value)}; e.dispatchEvent(new Event('change',{{bubbles:true}}))")
+        def view(name):
+            js(f"document.querySelector('[data-nav={name}]').click()")
+            wait(f"!document.querySelector('#{name}-view').hidden && document.querySelectorAll('[data-view]:not([hidden])').length===1",name+' view')
         def click_product(name):
+            if js("return document.querySelector('#board-view').hidden"): view('board')
+            if js("return !document.querySelector('#map-settings').open"):
+                js("document.querySelector('#map-settings summary').click()")
+            wait("document.querySelector('#map-settings').open",'Map layer drawer opens')
             if js(f"return !!document.querySelector('[data-product={name}]')"):
                 js(f"document.querySelector('[data-product={name}]').click()")
             else:
                 select('product',name)
             wait(f"document.querySelector('#product').value==='{name}'", name+' choice')
         api(prefix+'/url', {'url':url})
-        wait("document.querySelector('#atlas.leaflet-container[data-zoom]') && document.querySelector('#impact-metrics button')", 'Geographic map and impact figures')
+        wait("document.querySelector('#atlas.leaflet-container[data-zoom]') && document.querySelector('#impact-strip [data-kpi=exposure]')", 'Geographic map and impact figures')
         wait("document.querySelector('#winter-layer option[value=wssi_d1]') && document.querySelector('#report-table')", 'Public weather inventory')
         assert js("return document.title")== 'WPC IDSS and Media Briefing Dashboard'
         assert js("return document.querySelectorAll('#zoom-in').length===1 && !document.querySelector('#atlas .leaflet-control-zoom')")
@@ -64,9 +74,26 @@ def check(url):
         def on_screen(selector):
             return js(f"const r=document.querySelector({json.dumps(selector)}).getBoundingClientRect(); return r.width>0 && r.top>=0 && r.top+30<innerHeight")
         assert on_screen('#atlas') and on_screen('#focus-headline') and on_screen('#focus-evidence-title'), 'Map, briefing and observations should be visible together'
+        assert js("return document.querySelectorAll('#impact-strip button[data-kpi]').length===4 && document.querySelector('#impact-strip').getBoundingClientRect().bottom<=document.querySelector('#map-stage').getBoundingClientRect().top")
+        assert js("return document.querySelector('#map-stage').getBoundingClientRect().width/document.querySelector('#weather-spread').getBoundingClientRect().width>.64")
+        assert js("return document.documentElement.dataset.theme==='dark' && !document.querySelector('#map-settings').open")
+        js("document.querySelector('#theme-toggle').click()")
+        wait("document.documentElement.dataset.theme==='light' && document.querySelector('#atlas').dataset.basemap==='light'", 'Sitewide light mode and light geography')
+        snap('briefing-light')
+        api(prefix+'/refresh',{})
+        wait("document.documentElement.dataset.theme==='light' && document.querySelector('#atlas').dataset.basemap==='light' && document.querySelector('#impact-strip .kpi-value')", 'Light appearance persists on reload')
+        js("document.querySelector('#theme-toggle').click()")
+        wait("document.documentElement.dataset.theme==='dark' && document.querySelector('#atlas').dataset.basemap==='dark'",'Sitewide dark mode')
+        wait("document.querySelector('#winter-layer option[value=wssi_d1]')", 'Reloaded data')
+        api(prefix+'/execute/async', {'script':"const done=arguments[arguments.length-1]; import('./assets/release.js').then(m=>m.readRelease('board')).then(b=>{window.qaWeather=b.weather;done(true)},()=>done(false));",'args':[]})
+        js("document.querySelector('#map-settings summary').click()")
+        wait("document.querySelector('#map-settings').open && Number(document.querySelector('#layer-count').textContent)>=1", 'Collapsible layer controls')
+        snap('map-layers')
+        js("document.querySelector('#close-layers').click()")
+        view('products');view('sources');view('board')
         choices=js("return [...document.querySelector('#focus-product').options].filter(o=>o.value).map(o=>o.value)")
         if choices:
-            wait("document.querySelector('#atlas').dataset.briefingFeatures>0 && document.querySelector('.focus-number') && !document.querySelector('#map-focus-key').hidden", 'Matched briefing footprint and Census estimate')
+            wait("document.querySelector('#atlas').dataset.briefingFeatures>0 && document.querySelector('[data-kpi=exposure] .kpi-value') && !document.querySelector('#map-focus-key').hidden", 'Matched briefing footprint and Census estimate')
             initial=js("return document.querySelector('#focus-product').value")
             others=[c for c in choices if c!=initial]
             if others:
@@ -82,6 +109,13 @@ def check(url):
                 js("document.querySelector('[data-focus-scope=national]').click()")
             assert js("return !document.querySelector('#focus-copy').disabled")
         snap('briefing-desktop')
+        for key in ['exposure','aviation','ground','power']:
+            js(f"document.querySelector('[data-kpi={key}]').click()")
+            wait(f"!document.querySelector('#impacts-view').hidden && !document.querySelector('[data-impact-pane={key}]').hidden",key+' card opens its full details')
+            view('board')
+        js("document.querySelector('[data-kpi=power]').click(); document.querySelector('[data-map-product=power]').click()")
+        wait("!document.querySelector('#board-view').hidden && document.querySelector('#product').value==='power'", 'Impact map return')
+        click_product('radar')
         old = js("return Number(document.querySelector('#atlas').dataset.zoom)")
         js("document.querySelector('#zoom-in').click()")
         wait(f"Number(document.querySelector('#atlas').dataset.zoom)>{old}",'Incremental zoom button')
@@ -111,6 +145,7 @@ def check(url):
             wait("/Local Storm Report|Public Information Statement/i.test(document.querySelector('[data-testid=idss-geo-tooltip]').textContent)", 'Report source on hover')
             snap('observation-hover')
             if js("return qaWeather.observations.features.some(r=>r.sourceType==='PNS')"):
+                view('observations')
                 select('report-source','PNS')
                 wait("document.querySelector('#report-table tbody tr a')?.textContent.includes('PNS')", 'PNS measurement filter and source link')
                 wait("document.querySelectorAll('#report-timing [data-time-bin]').length===12",'Observation time chart')
@@ -118,7 +153,7 @@ def check(url):
                 wait("document.querySelector('#report-timing button[aria-pressed=true]') && document.querySelector('#report-table tbody tr')", 'Choose a reporting interval')
                 js("document.querySelector('[data-time-clear]').click()")
                 js("document.querySelector('#report-table [data-report]').click()")
-                wait("document.querySelector('[data-testid=idss-geo-popup]') || !document.querySelector('#map-detail').hidden", 'Locate the selected observation')
+                wait("!document.querySelector('#board-view').hidden && (document.querySelector('[data-testid=idss-geo-popup]') || !document.querySelector('#map-detail').hidden)", 'Locate the selected observation')
         click_product('power')
         wait("document.querySelector('#atlas canvas') || /unavailable|unverified/i.test(document.querySelector('#map-foot').textContent)", 'Geographic outage display or explicit source status')
         select('region','CONUS')
@@ -127,12 +162,13 @@ def check(url):
         wait("!document.querySelector('#brief-view').hidden && document.querySelector('#brief-output a[href^=https]')", 'Source-linked media brief')
         js("document.querySelector('#brief-states').value='FL';document.querySelector('#brief-form').requestSubmit()")
         wait("document.querySelector('#brief-output').textContent.includes('FL') && !document.querySelector('#form-error').textContent",'State-scoped brief')
-        js("location.hash='board';document.querySelector('[data-product=radar]').click();window.scrollTo(0,0)")
+        view('board');click_product('radar')
+        js("window.scrollTo(0,0)")
         api(prefix+'/goog/cdp/execute', {'cmd':'Emulation.setDeviceMetricsOverride','params':{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True}})
         wait("!document.querySelector('#board-view').hidden && document.documentElement.scrollWidth<=392 && document.documentElement.clientWidth<=392",'Phone viewport')
         select('region','CONUS')
         wait("document.querySelector('#atlas').getBoundingClientRect().top>0", 'Phone shows the map below the headline')
-        assert on_screen('#focus-headline') and on_screen('#atlas'), 'Briefing and geographic map should both appear on opening the phone view'
+        assert on_screen('#impact-strip') and on_screen('#focus-headline') and on_screen('#atlas'), 'Briefing and geographic map should both appear on opening the phone view'
         if js("return document.querySelector('#focus-glance').textContent.length>0"):
             assert on_screen('#focus-glance'), 'Measured amount should be visible beside the mobile briefing'
         snap('briefing-phone')

@@ -81,3 +81,28 @@
   border:1.5px solid #fff; background:var(--hazard-color); box-shadow:0 0 0 1.5px #132e44;
 }
 .hazard-leader .idss-hazard-name { bottom:16px; }
+
+/* Only the cartographic tile pane gets a neutral treatment. Product rasters and NWS
+   polygon colors occupy their own panes above it. */
+.idss-map[data-basemap=light] .idss-usgs-tiles {
+  filter: grayscale(1) contrast(.82) brightness(1.08);
+  opacity: .72;
+}
+.idss-map[data-basemap=light] .idss-state-label span {
+  color: #3e5360;
+  font-weight: 700;
+  letter-spacing: .075em;
+  text-shadow: 0 1px 2px #fff,1px 0 1px #fff,-1px 0 1px #fff;
+}
+.idss-map[data-basemap=light] .idss-city-label span { color:#405866; }
+.idss-map[data-basemap=light] .leaflet-control-scale-line {
+  color:#263f50;
+  border-color:#4b626f;
+  background:#fafcfbe8;
+}
+.idss-map[data-basemap=light] .hazard-leader::before {
+  background:#2a4151;
+  box-shadow:0 0 2px #fff;
+}
+.idss-map[data-basemap=light] .idss-hazard-name { background:#fffffff2; }
+.idss-map[data-basemap=light] .idss-report-label-box { background:#fcfffff2; }

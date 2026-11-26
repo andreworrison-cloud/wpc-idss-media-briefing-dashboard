@@ -16,7 +16,7 @@ export function freshImpact(value, now = Date.now(), minutes = 45) {
   if (!value || !['ok','current','partial'].includes(value.status)) return false;
   return recent(value.as_of || value.asOf || value.calculated_at || value.checkedAt, now, minutes);
 }
-export const activeAirEvents = (a, now = Date.now()) => freshImpact(a, now, 30) ? (a.events || []).filter(e => (!e.start_utc || Date.parse(e.start_utc) <= now) && (!e.end_utc || Date.parse(e.end_utc) > now)) : [];
+export const activeAirEvents = (a, now = Date.now()) => freshImpact(a, now, 30) ? (a.events || []).filter(e => (!e.start_utc || Date.parse(e.start_utc) <= now) && (e.kind === 'ground_stop' || !e.end_utc || Date.parse(e.end_utc) > now)) : [];
 export const currentRivers = (r, now = Date.now()) => freshImpact(r,now,60) ? (r.sites || []).filter(s => recent(s.observedAt,now,60 * r.periodHours)) : [];
 export const currentGroundReports = (r, now = Date.now()) => freshImpact(r,now,60) ? (r.items || []).filter(s => recent(s.observedAt,now,60 * r.periodHours)) : [];
 export function publicWeatherEvidence(weather, scope, now, cite, time) {

@@ -20,3 +20,8 @@ test('expired geometry and stale aviation are suppressed',()=>{
  assert.equal(exposureRecords(board,now+31*60000).length,0);
  assert.equal(activeAirEvents(board.impacts.aviation,now+31*60000).length,0);
 });
+
+test('FAA ground stops remain listed past the next advisory time while other expired notices fall out',()=>{
+ const events=[{kind:'ground_stop',end_utc:time(-5)},{kind:'departure_delay',end_utc:time(-5)}];
+ assert.deepEqual(activeAirEvents({status:'ok',as_of:time(0),events},now),[events[0]]);
+});

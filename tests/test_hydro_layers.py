@@ -1,13 +1,17 @@
 import copy
+import hashlib
 import json
 import struct
+import tempfile
 import unittest
 import zlib
 from datetime import timedelta
+from pathlib import Path
 from urllib.parse import urlsplit
 from unittest.mock import patch
 
 import hydro_layers as h
+from scripts.publish import package_radar_frame
 
 NOW = h.from_iso("2026-11-24T23:48:00Z")
 REV = "a"*40
@@ -66,6 +70,33 @@ def routes(html, index, data):
 
 
 class Radar(unittest.TestCase):
+    def test_same_origin_image_is_published_only_for_the_verified_source_time_and_bytes(self):
+        images = {}
+        image = png(7, 5, 255)
+        def fetch(url, limit):
+            if url.startswith(h.RADAR_REF):
+                return json.dumps({'ref':'refs/heads/'+h.BRANCH,'object':{'type':'commit','sha':REV}}).encode()
+            if url.endswith(h.MANIFEST):
+                return json.dumps(MANIFEST).encode()
+            return image
+        radar = h.collect_mrms(NOW, fetch, images)
+        digest = hashlib.sha256(image).hexdigest()
+        remote = radar['image_url']
+        with tempfile.TemporaryDirectory() as directory:
+            assets = Path(directory)
+            for change in [{'valid_time':'2026-11-24T23:30:38Z'}, {'image_url':remote+'old'}, {'status':'stale'}]:
+                other = {**radar, **change}
+                package_radar_frame(other, images, assets)
+                self.assertNotIn('local_image', other)
+            wrong = {(radar['valid_time'], remote, digest):image[:-1]}
+            package_radar_frame(radar, wrong, assets)
+            self.assertFalse(list(assets.rglob('*.png')))
+            package_radar_frame(radar, images, assets)
+            self.assertEqual(radar['local_image'], f'radar/20261124T234038Z-{digest}.png')
+            self.assertEqual((assets / radar['local_image']).read_bytes(), image)
+            self.assertEqual(radar['image_url'], remote)
+            self.assertEqual(radar['frames'][-1]['image_url'], remote)
+
     def test_bounds_time_and_immutable_frame(self):
         r=h.check_radar(MANIFEST,REV,NOW)
         self.assertEqual(r["status"],"current")

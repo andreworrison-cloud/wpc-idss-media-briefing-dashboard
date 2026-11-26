@@ -264,8 +264,8 @@ function observationEvidence(board, selected, now) {
   const states=new Set(selected?.footprintStates || []);
   const missingLocation=rows.some(r=>(!Number.isFinite(r.longitude) || !Number.isFinite(r.latitude)) &&
     (!r.state || !states.size || states.has(r.state)));
-  const truncated=(obs.counts?.availableLocated ?? 0)>(obs.counts?.located ?? Infinity) ||
-    (obs.counts?.availableUnlocated ?? 0)>(obs.counts?.unlocated ?? Infinity);
+  const truncated=obs.counts?.truncated || (obs.counts?.availableLocated ?? 0)>(obs.features?.length ?? 0) ||
+    (obs.counts?.availableUnlocated ?? 0)>(obs.unlocated?.length ?? 0);
   const partial=obs.status==='partial' || truncated || Object.values(obs.sources || {}).some(s=>!['ok','current'].includes(s.status));
   const completeCount=geometryComplete && !missingLocation && !partial;
   const notes=[];
@@ -288,3 +288,6 @@ export function briefingFocus(board, requestedId='', now=Date.now()) {
   const selected=choices.find(item=>item.id===requestedId) || choices[0] || null;
   return {status, choices, selected, evidence:observationEvidence(board,selected,now)};
 }
+
+// Shared with the exposure worker so resident and observation footprints use identical ring rules.
+export {indexAreas, contains};

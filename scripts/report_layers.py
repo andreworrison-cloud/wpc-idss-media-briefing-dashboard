@@ -16,7 +16,7 @@ import re
 
 UTC = timezone.utc
 HOURS = 48
-LOCATED_LIMIT, UNLOCATED_LIMIT = 1000, 250
+LOCATED_LIMIT, UNLOCATED_LIMIT = 5000, 2500
 BULK = "https://mesonet.agron.iastate.edu/cgi-bin/afos/retrieve.py"
 BOARD = "https://wpc-impact-briefing.aorrison.chatgpt.site/api/board"
 PAGES_BOARD = "https://andreworrison-cloud.github.io/wpc-idss-media-briefing-dashboard/data/board.json"
@@ -28,6 +28,7 @@ NAMES = "Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delawar
     "|"
 )
 STATES = dict(zip(NAMES, ABBR))
+MARINE_AREAS = {"AT": "Atlantic waters"}
 OFFSET = {
     "UTC": 0,
     "GMT": 0,
@@ -62,6 +63,8 @@ TYPES = {
     "hailDiameter": ("hail", "Hail diameter", "in"),
     "windChill": ("cold", "Wind chill", "°F"),
     "heatIndex": ("heat", "Heat index", "°F"),
+    "lowTemperature": ("cold", "Low temperature", "°F"),
+    "highTemperature": ("heat", "High temperature", "°F"),
 }
 LEADERS = {
     "snow": "snowfall",
@@ -114,6 +117,8 @@ EFFECTS = {
     "dust storm",
     "blowing dust",
     "dense fog",
+    "fog",
+    "other local storm report",
     "waterspout",
     "funnel cloud",
     "landspout",
@@ -165,6 +170,8 @@ PLAIN_ROW = re.compile(
     re.I,
 )
 CSV_START = re.compile(r"^\s*:?\d{1,2}/\d{1,2}/\d{4}\s*,")
+TABLE_HEADER = re.compile(r"^Location\s+(?:Amount|Speed|Temp(?:erature)?)\b.*\bTime/Date\b", re.I)
+EXCLUDED_HEADING = re.compile(r"FORECAST|OUTLOOK|NORMALS?|HISTORY|SNOW WATER EQUIVALENT", re.I)
 PRODUCT = re.compile(re.escape(TEXT) + r"(\d{12})-[A-Z0-9]{4}-[A-Z0-9]{6}-LSR[A-Z0-9]{2,3}(?:-[A-Z0-9]{3})?")
 ERR = (ValueError, OSError, HTTPException, BadZipFile, KeyError)
 
@@ -219,6 +226,7 @@ def coordinates(lat, lon, state):
         "GU": (12, 15, 143, 146),
         "MP": (13, 22, 143, 147),
         "AS": (-16, -10, -173, -167),
+        "AT": (17, 51, -83, -60),
     }
     south, north, west, east = bounds.get(state, (23, 51, -130, -60))
     if south <= y <= north and (west <= x <= east or (state == "AK" and 170 <= x <= 180)):
@@ -333,23 +341,30 @@ def source_info(name, url, end):
     }
 
 
+def report_archive(board):
+    sources = board.get("sources") if isinstance(board, dict) else None
+    reports = sources.get("reports") if isinstance(sources, dict) else None
+    return reports if isinstance(reports, dict) else {}
+
+
 def lsr_rows(board, end):
     info = source_info("NWS Local Storm Reports via IEM", LSR, end)
     if board is None:
         for url in (BOARD, PAGES_BOARD):
             try:
                 board = json.loads(fetch(url, 14_000_000, "application/json"))
-                if isinstance(board.get("sources", {}).get("reports"), dict):
+                if report_archive(board):
                     break
             except (OSError, HTTPException, ValueError, AttributeError, KeyError):
                 continue
-    src = (board or {}).get("sources", {}).get("reports") if isinstance(board, dict) else None
-    if not isinstance(src, dict) or not isinstance(src.get("events"), list):
+    src = report_archive(board)
+    if not isinstance(src.get("events"), list):
         return [], info
     cutoff, start = instant(src.get("window_end")), instant(src.get("window_start"))
     if not cutoff or not start or cutoff > end or start > cutoff:
         return [], info
     info["asOf"] = stamp(cutoff)
+    info["queryEnd"] = stamp(cutoff)
     if end - cutoff > timedelta(hours=2) or src.get("status") == "stale":
         info["status"] = "stale"
         return [], info
@@ -359,6 +374,8 @@ def lsr_rows(board, end):
         src.get("status") != "ok"
         or src.get("query_complete") is not True
         or start > end - timedelta(hours=HOURS)
+        or ("count" in src and src["count"] != len(src["events"]))
+        or cutoff < end
         or (board.get("health") or {}).get("reports", {}).get("retained")
     )
     rows = {}
@@ -366,7 +383,10 @@ def lsr_rows(board, end):
         if not isinstance(item, dict):
             partial = True
             continue
-        name = item.get("title", "")
+        name = item.get("title")
+        if not isinstance(name, str):
+            partial = True
+            continue
         key = name.lower()
         if key not in LSR_TYPES and key not in EFFECTS:
             continue
@@ -380,13 +400,16 @@ def lsr_rows(board, end):
             or item.get("revision") == "withdrawal"
         ):
             continue
-        link = item.get("source_url", "")
-        match = PRODUCT.fullmatch(link)
+        link = item.get("source_url")
+        match = PRODUCT.fullmatch(link) if isinstance(link, str) else None
+        state = item.get("state")
         if (
             not match
             or match[1] != issued.strftime("%Y%m%d%H%M")
-            or item.get("state") not in ABBR
-            or not item.get("id")
+            or not isinstance(state, str)
+            or (state not in ABBR and state not in MARINE_AREAS)
+            or not isinstance(item.get("id"), str)
+            or not item["id"]
             or item.get("revision_match") == "unmatched"
             or observed > issued
         ):
@@ -398,7 +421,7 @@ def lsr_rows(board, end):
         row = report(
             "LSR",
             item.get("wfo"),
-            item["state"],
+            state,
             place(item.get("city")),
             place(item.get("county")),
             item.get("lat"),
@@ -413,7 +436,13 @@ def lsr_rows(board, end):
             q if q in ("Measured", "Estimated") else "Reported",
             dur if dur and dur > 0 else None,
         )
-        row["impactFlags"] = [flag for flag in item.get("impact_flags", []) if flag in SAFE_FLAGS]
+        flags = item.get("impact_flags", [])
+        if not isinstance(flags, list):
+            partial = True
+            flags = []
+        row["impactFlags"] = [flag for flag in flags if isinstance(flag, str) and flag in SAFE_FLAGS]
+        if row["state"] in MARINE_AREAS:
+            row["marineArea"] = MARINE_AREAS[row["state"]]
         row["id"] = item["id"]
         rows[row["id"]] = row
     info["status"] = "partial" if partial else "ok"
@@ -443,10 +472,7 @@ def from_local(date, time, zone, issued):
 
 def heading_kind(v):
     s = v.upper()
-    if re.search(
-        r"FORECAST|NORMALS?|HISTORY|SNOW WATER EQUIVALENT|MAY INCLUDE|AMOUNTS INCLUDE|MIXTURE OF|PLEASE NOTE",
-        s,
-    ):
+    if EXCLUDED_HEADING.search(s) or re.search(r"MAY INCLUDE|AMOUNTS INCLUDE|MIXTURE OF|PLEASE NOTE", s):
         return None
     for pattern, typ in (
         (r"SNOW (?:DEPTH|ON GROUND)|SNOW ON THE GROUND", "snowDepth"),
@@ -457,9 +483,12 @@ def heading_kind(v):
         (r"PRECIPITATION REPORTS", "precipitation"),
         (r"WIND GUST|PEAK WINDS", "windGust"),
         (r"SUSTAINED WIND", "sustainedWind"),
+        (r"\b(?:HIGHEST|STRONGEST) WIND REPORTS?\b", "windSpeed"),
         (r"HAIL", "hailDiameter"),
         (r"WIND CHILL", "windChill"),
         (r"HEAT IND(?:EX|ICES)", "heatIndex"),
+        (r"\bLOW TEMPERATURE REPORTS?\b", "lowTemperature"),
+        (r"\bHIGH TEMPERATURE REPORTS?\b", "highTemperature"),
     ):
         if re.search(pattern, s):
             return typ
@@ -494,8 +523,14 @@ def pns_product(fname, body, end):
     )
     machine = []
     display = []
+    header = body[:tz.start()] if tz else ""
+    ugc_areas = set(re.findall(r"(?:^|-)([A-Z]{2})[CZ]\d{3}", header, re.M))
+    default_state = next(iter(ugc_areas)) if len(ugc_areas) == 1 and ugc_areas.issubset(ABBR) else None
     state = None
     county = None
+    marine_area = None
+    reporting_area = None
+    table_header = False
     typ = None
     unit = None
     duration = None
@@ -529,7 +564,7 @@ def pns_product(fname, body, end):
             if mixed_liquid and mt == "rainfall":
                 mt = "precipitation"
             state_code = c[2].upper()
-            if state_code not in ABBR:
+            if state_code not in ABBR and state_code not in MARINE_AREAS:
                 continue
             obs = from_local(c[0], c[1], tz[1].upper() if tz else "", issued)
             if not obs:
@@ -565,25 +600,29 @@ def pns_product(fname, body, end):
                 errors += 1
                 continue
             r["_name"] = place(loc)
+            if state_code in MARINE_AREAS:
+                r["marineArea"] = MARINE_AREAS[state_code]
             machine.append(r)
+            continue
+        if typ and TABLE_HEADER.match(ln):
+            table_header = True
+            unit_match = re.search(r"\((in\.?|inches|mph|°F)\)", ln, re.I)
+            unit = unit_match[1] if unit_match else None
             continue
         striped = ln.strip(".* ").strip()
         if striped.lower() in STATES:
             state = STATES[striped.lower()]
-            county = None
+            county = marine_area = reporting_area = None
             continue
         if ln.startswith("...") or ln.startswith("***"):
-            if re.search(
-                r"\b(?:county|parish|borough|census area|municipality)(?: [A-Z]{2})?$", striped, re.I
-            ):
-                county = place(
-                    re.sub(
-                        r"\s+(?:county|parish|borough|census area|municipality)(?: [A-Z]{2})?$",
-                        "",
-                        striped,
-                        flags=re.I,
-                    )
-                )
+            county_heading = re.fullmatch(
+                r"(.+?)\s+(?:county|parish|borough|census area|municipality)(?: ([A-Z]{2}))?", striped, re.I
+            )
+            if county_heading:
+                county = place(county_heading[1])
+                marine_area = reporting_area = None
+                explicit_state = (county_heading[2] or "").upper()
+                state = explicit_state if explicit_state in ABBR else state or default_state
                 continue
             if re.search(r"MAY INCLUDE|AMOUNTS INCLUDE|PLEASE NOTE", striped, re.I):
                 continue
@@ -593,26 +632,38 @@ def pns_product(fname, body, end):
                 seen_table = True
                 duration = heading_duration(striped)
                 period = "Storm total" if "STORM TOTAL" in striped.upper() else None
-                state = None
-                county = None
+                if "SINCE MIDNIGHT" in striped.upper():
+                    period = "Since local midnight"
+                state = default_state
+                county = marine_area = reporting_area = None
+                table_header = False
                 unit = None
                 continue
-            if "OCEAN" in striped.upper() or striped.upper().startswith(
+            if striped.upper() == "MARITIME STATIONS" or "OCEAN" in striped.upper() or striped.upper().startswith(
                 ("GULF OF", "LAKE ERIE", "LAKE MICHIGAN", "LAKE SUPERIOR")
             ):
+                if not marine_area or striped.upper() != "MARITIME STATIONS":
+                    marine_area = place(striped)
                 state = None
-                county = None
+                county = reporting_area = None
+            elif typ and table_header and not EXCLUDED_HEADING.search(striped) and not re.search(
+                r"\bREPORTS?\b", striped, re.I
+            ):
+                # NWS also groups table rows by forecast zone. A zone name alone
+                # cannot identify a state in a multi-state bulletin.
+                county = marine_area = None
+                reporting_area = place(striped)
+                state = default_state
             elif typ:
                 typ = None
                 state = None
-                county = None
+                county = marine_area = reporting_area = None
+                table_header = False
             continue
         if ln == "&&":
             typ = None
             continue
-        if not typ or not state:
-            if typ and re.search(r"\(in\.?\)|\(mph\)|\(inches\)", ln, re.I):
-                unit = "mph" if "mph" in ln.lower() else "in"
+        if not typ or (not state and not table_header):
             continue
         rawrow = PLAIN_ROW.fullmatch(raw.rstrip())
         if not rawrow:
@@ -648,22 +699,38 @@ def pns_product(fname, body, end):
             duration=duration,
             period=period,
         )
+        if not r["place"]:
+            errors += 1
+            continue
+        if marine_area:
+            r["marineArea"] = marine_area
+        if reporting_area:
+            r["reportingArea"] = reporting_area
         if r["value"] is not None or r["trace"]:
             display.append(r)
         else:
             errors += 1
     if not seen_table:
+        if re.search(
+            r"^Daily Temperature and Precipitation Summary$|^:Temperature and precipitation stations\s*$",
+            body, re.I | re.M
+        ):
+            return [], "climateSummary", issued
         return [], "other", issued
-    matched = merge_tables(machine, display)
-    return matched, ("partial" if errors or not table_lines else "measurement"), issued
+    matched, ambiguous = merge_tables(machine, display)
+    if errors or not table_lines:
+        return matched, "partial", issued
+    return matched, "unresolvedStations" if ambiguous else "measurement", issued
 
 
 def join_key(row):
-    typ = "liquid" if row["category"] == "rain" else row["measurementType"]
+    typ = row["measurementType"]
+    if row["category"] == "rain":
+        typ = "liquid"
+    elif typ in ("windGust", "windSpeed"):
+        typ = "wind"
     # The public display rounds station observations, e.g. 2.742 to 2.74 inches.
     return (
-        row["state"],
-        str(row["county"] or "").lower(),
         typ,
         row["observedAt"],
         None if row["value"] is None else round(row["value"] + 1e-9, 2),
@@ -675,14 +742,34 @@ def locality(name):
     if not name:
         return ""
     s = name.lower().strip()
-    s = re.sub(r"^\d+(?:\.\d+)?\s+[nsew]{1,3}\s+", "", s)
-    s = re.sub(r"\s+\d+(?:\.\d+)?\s*[nsew]{1,3}$", "", s)
-    return s.strip()
+    # Both orders occur for the same station. Preserve the direction and distance.
+    return re.sub(r"^(.+?)\s+(\d+(?:\.\d+)?)\s*([nsew]{1,3})$", r"\2 \3 \1", s)
+
+
+def match_strength(source, view):
+    if source["state"] and view["state"] and source["state"] != view["state"]:
+        return 0
+    county = (source["county"] or "").lower()
+    area = (view["county"] or view.get("reportingArea") or "").lower()
+    if county and view["county"] and county != area:
+        return 0
+    if source["latitude"] is not None and view["latitude"] is not None:
+        # Public NWS tables often round a higher-precision source position to 0.01 degrees.
+        return 4 if all(abs(source[k] - view[k]) <= 0.00501 for k in ("latitude", "longitude")) else 0
+    if source["_name"] and locality(source["_name"]) == locality(view["place"]):
+        return 3
+    if county and re.search(r"\b" + re.escape(county) + r"\b", area):
+        return 2
+    return 1
+
+
+def county_key(row):
+    return row["state"], (row["county"] or "").casefold()
 
 
 def merge_tables(machine, display):
     if not machine:
-        return display
+        return display, False
     mg = defaultdict(list)
     dg = defaultdict(list)
     for r in machine:
@@ -690,31 +777,57 @@ def merge_tables(machine, display):
     for r in display:
         dg[join_key(r)].append(r)
     out = []
+    ambiguous = False
     for key, rows in mg.items():
         views = dg.pop(key, [])
-        for r in rows:
+        strengths = [[match_strength(r, v) for v in views] for r in rows]
+        free_rows = set(range(len(rows)))
+        free_views = set(range(len(views)))
+        matches = {}
+        # Match each printed station only once. Place a numeric report at a named
+        # station only when both representations identify one candidate.
+        for level in (4, 3, 2):
+            for i in sorted(free_rows):
+                fits = [j for j in free_views if strengths[i][j] >= level]
+                if len(fits) != 1:
+                    continue
+                j = fits[0]
+                if sum(strengths[k][j] >= level for k in free_rows) == 1:
+                    matches[i] = views[j]
+                    free_views.remove(j)
+                    free_rows.remove(i)
+        for i, r in enumerate(rows):
             original = r.pop("_name")
-            direct = [v for v in views if original and v["place"].lower() == original.lower()]
-            if not direct and original:
-                direct = [v for v in views if locality(original) == locality(v["place"])]
-            v = direct[0] if len(direct) == 1 else views[0] if len(rows) == len(views) == 1 else None
+            v = matches.get(i)
             if v:
                 r["place"] = v["place"]
                 if v["value"] is not None:
                     r["value"] = v["value"]
                 if r["latitude"] is None and v["latitude"] is not None:
                     r["latitude"], r["longitude"] = v["latitude"], v["longitude"]
-            elif original and (
-                re.match(r"^\d+(?:\.\d+)?\s+[NSEW]{1,3}\s+", original, re.I)
-                or any(original.lower() == v["place"].lower() for v in views)
-            ):
+            elif original and re.match(r"^\d+(?:\.\d+)?\s+[NSEW]{1,3}\s+", original, re.I):
                 r["place"] = original
             else:
                 r["place"] = r["county"] + " reporting area" if r["county"] else r["state"]
             out.append(r)
+        # A mirrored county table may have tied values at distinct stations.
+        # The complete compact inventory provides every position and reading
+        # in that county, even when we cannot assign the alternate place names.
+        compact_counts = Counter(county_key(rows[i]) for i in free_rows)
+        print_counts = Counter(county_key(views[j]) for j in free_views)
+        for j in sorted(free_views):
+            region = county_key(views[j])
+            candidates = [i for i in free_rows if strengths[i][j]]
+            if not candidates:
+                out.append(views[j])
+            elif not (all(region) and print_counts[region] <= compact_counts[region]
+                      and all(county_key(rows[i]) == region for i in candidates)):
+                # A station already represented in the compact table may have a
+                # different display name. A second independent report is unverified.
+                ambiguous = True
     for rows in dg.values():
         out.extend(rows)
-    return out
+    return out, ambiguous
 
 
 def correction_series(fname, body):
@@ -773,25 +886,29 @@ def pns_rows(end):
             for f in entries:
                 if f.is_dir():
                     continue
-                body = z.read(f).decode("utf-8", errors="replace").replace("\r", "")
-                rows, kind, issued = pns_product(f.filename, body, end)
-                products[kind] += 1
                 read += 1
+                try:
+                    body = z.read(f).decode("utf-8", errors="replace").replace("\r", "")
+                    rows, kind, issued = pns_product(f.filename, body, end)
+                    if kind in ("partial", "measurement", "unresolvedStations"):
+                        series, corrected = correction_series(f.filename, body)
+                        editions.append((issued, series, corrected, rows, kind))
+                except (ValueError, csv.Error, BadZipFile, KeyError):
+                    products["unsupported"] += 1
+                    continue
+                products[kind] += 1
                 if issued:
                     last = max(last, issued) if last else issued
-                if kind in ("partial", "measurement"):
-                    series, corrected = correction_series(f.filename, body)
-                    editions.append((issued, series, corrected, rows))
     except ERR:
         return [], info
     active = []
-    for issued, series, corrected, rows in sorted(editions, key=lambda e: e[0]):
+    for issued, series, corrected, rows, kind in sorted(editions, key=lambda e: e[0]):
         if corrected and series[1]:
             keep = [e for e in active if not (e[1] == series and issued - e[0] <= timedelta(hours=6))]
             superseded += len(active) - len(keep)
             active = keep
-        active.append((issued, series, rows))
-    for _, _, rows in active:
+        active.append((issued, series, rows, kind))
+    for _, _, rows, _ in active:
         for r in rows:
             point = (r["latitude"], r["longitude"]) if r["latitude"] is not None else r["place"].lower()
             key = (
@@ -808,15 +925,23 @@ def pns_rows(end):
                 key = key + (r["value"],)
             r["id"] = "pns-" + row_id(key)
             records[key] = r
+    active_kinds = Counter(kind for _, _, _, kind in active)
+    incomplete = products["unsupported"] + active_kinds["partial"] + active_kinds["unresolvedStations"]
+    note = "Individual time-stamped PNS measurements use station coordinates when published. Daily multi-element climate-summary tables are outside this index."
+    if active_kinds["unresolvedStations"]:
+        note += " Some alternate station names could not be reconciled between bulletin tables. The verified compact observations are retained."
     info.update(
         asOf=stamp(end),
-        status="partial" if products["unsupported"] or products["partial"] else "ok",
+        status="partial" if incomplete else "ok",
         bulletinsExamined=read,
-        tableProducts=products["measurement"] + products["partial"],
+        tableProducts=products["measurement"] + products["partial"] + products["unresolvedStations"],
         otherProducts=products["other"],
+        climateSummaryProducts=products["climateSummary"],
+        incompleteProducts=incomplete,
+        unresolvedStationProducts=active_kinds["unresolvedStations"],
         supersededBulletins=superseded,
         latestIssuedAt=stamp(last),
-        note="Published measurement tables. Administrative statements and free-form narratives are excluded.",
+        note=note,
     )
     return list(records.values()), info
 
@@ -844,6 +969,13 @@ def collect(now, board=None):
     if not current:
         raise ValueError("Timezone-aware collection time required")
     end = current.replace(second=0, microsecond=0)
+    # The public edition can precede the page build by a few minutes. Compare
+    # both archives over the same 48 hours, retaining the actual review time.
+    report_source = report_archive(board)
+    cutoff = instant(report_source.get("window_end"))
+    if (cutoff and report_source.get("query_complete") is True and report_source.get("status") == "ok"
+            and end - timedelta(minutes=10) <= cutoff <= end):
+        end = cutoff
     with ThreadPoolExecutor(max_workers=2) as ex:
         lsr = ex.submit(lsr_rows, board, end)
         pns = ex.submit(pns_rows, end)
@@ -913,6 +1045,7 @@ def collect(now, board=None):
             "availableUnlocated": len(unlocated),
             "locatedLimit": LOCATED_LIMIT,
             "unlocatedLimit": UNLOCATED_LIMIT,
+            "truncated": len(located) > LOCATED_LIMIT or len(unlocated) > UNLOCATED_LIMIT,
         },
         "leaders": leaders,
         "leaderStatus": leader_status,

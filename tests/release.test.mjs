@@ -12,3 +12,14 @@ test('the artifact uses one request when fresh and preserves a later verified lo
  let calls=0;await readRelease('board',async()=>{calls++;return response(board(1))},now);assert.equal(calls,1);
  const b=await readRelease('board',async url=>response(board(url.startsWith('./')?15:20)),now);assert.equal(b.revision,board(15).revision);
 });
+
+test('first paint receives the complete saved board before a late GitHub pointer responds',async()=>{
+ const local=board(20),newer=board(1);
+ let finish,seen;
+ const pointer=new Promise(resolve=>{finish=resolve;});
+ const work=readRelease('board',async url=>url.startsWith('./')?response(local):pointer,now,{onSaved:value=>{seen=value;}});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(seen.revision,local.revision);
+ finish(response(newer));
+ assert.equal((await work).revision,newer.revision);
+});

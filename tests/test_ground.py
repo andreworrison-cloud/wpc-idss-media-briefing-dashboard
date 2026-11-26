@@ -96,6 +96,16 @@ class RiverTests(unittest.TestCase):
             r = ground.classify_rivers(expected, data, NOW)
             self.assertEqual((r["status"],r["total"],r["availableCount"]), ("partial",None,1))
 
+    def test_known_old_observation_does_not_invalidate_six_hour_subset(self):
+        old = site("OLDA1", obstime=ground.stamp(NOW-timedelta(hours=8)))
+        r = ground.classify_rivers(groups(major=2), fc([site(), old]), NOW)
+        self.assertEqual((r["status"], r["total"], r["counts"]["major"], r["excludedOld"]), ("ok", 1, 1, 1))
+        r = ground.classify_rivers(groups(major=1), fc([old]), NOW)
+        self.assertEqual((r["status"], r["total"], r["excludedOld"]), ("ok", 0, 1))
+        for rows in [[site("OLDA1"), old], [old, site("OLDA1")], [old, old]]:
+            r = ground.classify_rivers(groups(major=2), fc(rows), NOW)
+            self.assertEqual((r["status"], r["total"], r["availableCount"]), ("partial", None, 0))
+
     def test_conflicting_gauge_id_and_raw_measurement_sentinel(self):
         good = site("GOOD1",observed=-999,longitude=None)
         r = ground.classify_rivers(groups(major=2,minor=1),fc([site(),site(status="minor"),good]),NOW)

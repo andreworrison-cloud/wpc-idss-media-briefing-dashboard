@@ -58,13 +58,20 @@ export function loadReference(root=ASSET_ROOT) {
 }
 const basePalettes = {
   dark: {foreign:'#243a49', land:'#2d4352', water:'#0c1e2e', coast:'#617783', state:'#c4d6da', river:'#527285'},
+  light: {foreign:'#e8eae6', land:'#f1f1eb', water:'#c5d2d9', coast:'#899ba1', state:'#667985', river:'#97b4c1'},
   topo: {foreign:'#e4e6da', land:'#ebece2', water:'#a8ccdd', coast:'#9daa9b', state:'#516775', river:'#91bacd'}
 };
+export const BASEMAP_CHOICES = Object.freeze([
+  Object.freeze({id:'dark', label:'Dark relief'}),
+  Object.freeze({id:'light', label:'Light relief'}),
+  Object.freeze({id:'topo', label:'USGS topo'})
+]);
+
 const nearLongitude=(lon,center)=>lon+360*Math.round((center-lon)/360);
 const smallStates=new Set(['DC','MD','DE','RI','NJ','VT','NH','MA','CT','VI','MP','AS','GU']);
 const majorStates=new Set(['CA','WA','MT','CO','TX','MN','IL','GA','NY','AK','HI','PR']);
 const reliefBounds=[[10,-175],[75,-45]];
-export function mountBase(L,map,{root=ASSET_ROOT,onStatus,tiles=true,onReference,style:initialStyle}={}) {
+export function mountBase(L,map,{root=ASSET_ROOT,onStatus,tiles=true,onReference,onStyleChange,showControl=true,style:initialStyle}={}) {
   const container=map.getContainer(),doc=container.ownerDocument;
   const vector=L.layerGroup().addTo(map), borders=L.layerGroup().addTo(map), labels=L.layerGroup().addTo(map);
   const water=L.layerGroup().addTo(map);
@@ -81,6 +88,15 @@ export function mountBase(L,map,{root=ASSET_ROOT,onStatus,tiles=true,onReference
   const relief=L.imageOverlay(new URL('briefing-relief.webp',root).href,reliefBounds,{
     pane:'idss-backdrop',alt:'Natural Earth shaded relief',interactive:false,className:'idss-relief-backdrop'
   });
+  // The light and dark Natural Earth 1:50m plates share the same Web Mercator pixel grid.
+  const lightRelief=L.imageOverlay(new URL('briefing-light-relief.webp',root).href,reliefBounds,{
+    pane:'idss-backdrop',alt:'Natural Earth light shaded relief',interactive:false,className:'idss-relief-backdrop'
+  });
+  const plates={dark:relief,light:lightRelief,topo:national};
+  for(const [id,plate] of Object.entries(plates)){
+    plate.on('error',()=>{if(!destroyed&&style===id)onStatus?.({layer:'basemap-image',status:'partial',message:'The local relief image is unavailable. State boundaries and mapped hazards remain visible.'});});
+    plate.on('load',()=>{if(!destroyed&&style===id)onStatus?.({layer:'basemap-image',status:'current'});});
+  }
   const terrainCredit='<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth relief</a>';
   map.attributionControl.addAttribution('<a href="https://www.census.gov/geographies/mapping-files/time-series/geo/cartographic-boundary.html" target="_blank" rel="noopener">Census</a>');
   map.attributionControl.addAttribution(terrainCredit);
@@ -118,12 +134,12 @@ export function mountBase(L,map,{root=ASSET_ROOT,onStatus,tiles=true,onReference
     for(const state of reference.states){
       const near=state.code==='AK'?-154:state.center[1];
       vectorStyle(state.geometry,{...baseFill,fillColor:p.land},vector,near);
-      const edge=vectorStyle(state.geometry,{pane:'idss-borders',color:p.state,weight:dark?.85:.8,opacity:dark?.74:.78,fill:false,interactive:false},borders,near);
+      const edge=vectorStyle(state.geometry,{pane:'idss-borders',color:p.state,weight:style==='topo'?.8:1,opacity:dark?.8:.88,fill:false,interactive:false},borders,near);
       edge.eachLayer(layer=>layer.getElement()?.setAttribute('data-testid','idss-states'));
     }
-    const waterPane=dark?'idss-hydrography':'idss-land';
+    const waterPane=style==='topo'?'idss-land':'idss-hydrography';
     vectorStyle(reference.lakes,{...baseFill,pane:waterPane,fillColor:p.water},water);
-    vectorStyle(reference.rivers,{pane:waterPane,stroke:true,fill:false,color:p.river,weight:dark?.75:.85,opacity:dark?.72:1,interactive:false},water);
+    vectorStyle(reference.rivers,{pane:waterPane,stroke:true,fill:false,color:p.river,weight:dark?.75:.85,opacity:dark?.72:style==='light'?.76:1,interactive:false},water);
   }
   function drawLabels(){
     if(!reference||destroyed)return;
@@ -146,38 +162,45 @@ export function mountBase(L,map,{root=ASSET_ROOT,onStatus,tiles=true,onReference
       if(zoom<3.65&&!majorStates.has(state.code)||zoom<5.5&&smallStates.has(state.code))continue;
       place(state.code,...state.center,'state');
     }
-    if(online&&style==='topo'||zoom<3.7)return;
+    if(online&&style!=='dark'||zoom<3.7)return;
     const rank=zoom<4.3?0:zoom<5.2?1:zoom<6?2:zoom<6.8?4:6;
     for(const [name,lat,lon,r] of reference.cities)if(r<=rank)place(name,lat,lon,'city');
   }
   function changeStyle(value,remember=false){
     if(!Object.hasOwn(basePalettes,value)||value===style)return;
+    const previous=style;
     style=value;container.dataset.basemap=style;
+    container.style.backgroundColor=basePalettes[style].water;
     if(remember)try{doc.defaultView?.localStorage.setItem('wpc-idss:basemap',style);}catch{}
-    const was=style==='dark'?national:relief, active=style==='dark'?relief:national;
-    if(map.hasLayer(was))map.removeLayer(was);
-    active.addTo(map);
-    syncTiles();drawGeography();drawLabels();select.value=style;
-    onStatus?.({layer:'basemap',status:'current',message:style==='dark'?'Natural Earth shaded relief':'USGS topographic reference'});
+    if(previous && map.hasLayer(plates[previous]))map.removeLayer(plates[previous]);
+    plates[style].addTo(map);
+    syncTiles();drawGeography();drawLabels();
+    if(select)select.value=style;
+    onStatus?.({layer:'basemap',status:'current',message:style==='topo'?'USGS topographic reference':'Natural Earth shaded relief'});
+    onStatus?.({layer:'basemap-image',status:'current'});
+    onStyleChange?.(style);
     map.fire('idssbasemapchange',{style});
   }
-  const selector=L.control({position:'bottomleft'}), select=doc.createElement('select');
-  selector.onAdd=()=>{
-    const box=doc.createElement('div');box.className='idss-base-switch';
-    select.setAttribute('aria-label','Map background');select.setAttribute('data-testid','idss-basemap');
-    for(const [id,label] of [['dark','Dark relief'],['topo','USGS topo']]){
-      const option=doc.createElement('option');option.value=id;option.textContent=label;select.append(option);
-    }
-    box.append(select);L.DomEvent.disableClickPropagation(box);L.DomEvent.disableScrollPropagation(box);
-    select.onchange=()=>changeStyle(select.value,true);return box;
-  };
-  selector.addTo(map);
-  changeStyle(Object.hasOwn(basePalettes,initialStyle)?initialStyle:saved==='topo'?'topo':'dark');
+  const select=showControl?doc.createElement('select'):null;
+  const selector=showControl?L.control({position:'bottomleft'}):null;
+  if(selector){
+    selector.onAdd=()=>{
+      const box=doc.createElement('div');box.className='idss-base-switch';
+      select.setAttribute('aria-label','Map background');select.setAttribute('data-testid','idss-basemap');
+      for(const {id,label} of BASEMAP_CHOICES){
+        const option=doc.createElement('option');option.value=id;option.textContent=label;select.append(option);
+      }
+      box.append(select);L.DomEvent.disableClickPropagation(box);L.DomEvent.disableScrollPropagation(box);
+      select.onchange=()=>changeStyle(select.value,true);return box;
+    };
+    selector.addTo(map);
+  }
+  changeStyle(Object.hasOwn(basePalettes,initialStyle)?initialStyle:Object.hasOwn(basePalettes,saved)?saved:'dark');
   const onZoom=()=>{syncTiles();drawLabels();};
   map.on('zoomend',onZoom);map.on('moveend',drawLabels);
   loadReference(root).then(g=>{
     if(destroyed)return;
     reference=g;drawGeography();drawLabels();onReference?.(g);
   }).catch(()=>onStatus?.({layer:'geography',status:'partial',message:'Local state boundaries could not be loaded.'}));
-  return {get reference(){return reference;},setStyle:value=>changeStyle(value,true),destroy(){destroyed=true;clearTimeout(timer);map.off('zoomend',onZoom);map.off('moveend',drawLabels);selector.remove();}};
+  return {get reference(){return reference;},setStyle:value=>changeStyle(value,true),destroy(){destroyed=true;clearTimeout(timer);map.off('zoomend',onZoom);map.off('moveend',drawLabels);selector?.remove();}};
 }

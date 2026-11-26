@@ -6,7 +6,7 @@ import re
 import unittest
 from urllib.parse import urljoin, urlsplit
 
-from scripts.publish import ASSETS, SOURCES, qualify, stamp
+from scripts.publish import ASSETS, GENERATED_CENTER_INDEX, SOURCES, qualify, stamp
 
 ROOT = Path(__file__).resolve().parents[1]
 WHEN = '2026-11-24T21:51:51.965Z'
@@ -97,7 +97,7 @@ class PagesTests(unittest.TestCase):
             resolved = urljoin(root + filename, url)
             self.assertTrue(resolved.startswith(root), resolved)
             self.assertTrue((ROOT/urlsplit(resolved).path.removeprefix('/one-project/')).is_file(), f'{filename} → {url} → {resolved}')
-        self.assertEqual(set(ASSETS), {str(p.relative_to(ROOT/'assets')) for p in (ROOT/'assets').rglob('*') if p.is_file()})
+        self.assertEqual(set(ASSETS), {str(p.relative_to(ROOT/'assets')) for p in (ROOT/'assets').rglob('*') if p.is_file() and p.name != GENERATED_CENTER_INDEX})
 
     def test_dedicated_workflow_has_no_cross_repository_trigger(self):
         workflow = (ROOT/'.github/workflows/publish.yml').read_text()

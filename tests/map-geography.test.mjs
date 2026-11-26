@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {existsSync,readFileSync} from 'node:fs';
 import test from 'node:test';
 const root=existsSync(new URL('./geographic-base.js',import.meta.url))?new URL('./',import.meta.url):new URL('../assets/',import.meta.url);
-const {geometryNear,MAP_REGIONS}=await import(new URL('geographic-base.js',root));
+const {geometryNear,MAP_REGIONS,BASEMAP_CHOICES}=await import(new URL('geographic-base.js',root));
 const {reportPoint}=await import(new URL('map-points.js',root));
 
 test('an Aleutian polygon and interior ring remain local across the date line',()=>{
@@ -56,6 +56,74 @@ test('the briefing map accepts current native zones and mixed collections while 
 test('published relief and city orientation data include the national and regional geography',()=>{
   const d=JSON.parse(readFileSync(new URL('geo-reference.json',root)));
   for(const name of ['Seattle','Denver','St. Louis','Juneau'])assert.ok(d.cities.some(c=>c[0]===name&&Number.isFinite(c[1])&&Number.isFinite(c[2])));
-  const relief=readFileSync(new URL('briefing-relief.webp',root));
-  assert.equal(relief.toString('ascii',8,12),'WEBP');
+  assert.deepEqual(BASEMAP_CHOICES.map(x=>x.id),['dark','light','topo']);
+  const dark=readFileSync(new URL('briefing-relief.webp',root));
+  const light=readFileSync(new URL('briefing-light-relief.webp',root));
+  for(const plate of [light,dark]){
+    assert.equal(plate.toString('ascii',8,12),'WEBP');
+    assert.ok(plate.length>30000);
+  }
+  assert.notDeepEqual(light,dark);
+});
+
+test('outage map labels expose each reading time, reporting status and geographic coverage',async()=>{
+  const {outageMapReading}=await import(new URL('command-map.js',root));
+  const base={level:'state',status:'current',as_of:'2026-11-26T13:30:00Z',geometry_status:'current'};
+  assert.match(outageMapReading(base),/State readings.*13:30 UTC.*customer accounts/);
+  assert.match(outageMapReading({...base,level:'county',status:'stale',geometry_status:'partial'}),/County outage readings have expired.*13:30 UTC.*Some geographic boundaries/);
+  assert.match(outageMapReading({...base,as_of:null,status:'unavailable',geometry_status:'unavailable'}),/State outage readings are unavailable\. The geographic boundaries/);
+});
+
+test('NWS cartography requires an exact CAP id, hazard, issuance, expiry and active segment',async()=>{
+  const {alertOutline,indexGISShapes,indexWinterShapes}=await import(new URL('active-alert-shapes.js',root));
+  const now=Date.parse('2026-11-26T12:30:00Z');
+  const a={id:'bulletin-1',title:'Winter Storm Warning',sent:'2026-11-26T12:00:00Z',effective:'2026-11-26T12:00:00Z',
+    expires:'2026-11-26T18:00:00Z',ends:null,ugc:['TXZ001','TXZ002'],geometry:[]};
+  const g={type:'Polygon',coordinates:[[[-100,30],[-99,30],[-99,31],[-100,30]]]};
+  const p={cap_id:a.id,prod_type:a.title,issuance:'2026-11-26T07:00:00-05:00',expiration:a.expires,ends:' '};
+  const feature=properties=>({type:'Feature',geometry:g,properties});
+  const gis=indexGISShapes([feature(p),feature(p)]);
+  assert.equal(alertOutline(a,null,gis,now).geometry[0].type,'MultiPolygon');
+  assert.equal(alertOutline({...a,geometry:[g]},null,gis,now).geometry[0],g);
+  for(const change of [{cap_id:'different'},{prod_type:'Watch'},{issuance:'2026-11-26T11:58:00Z'},
+    {expiration:'2026-11-26T19:00:00Z'},{ends:'2026-11-26T14:00:00Z'}]){
+    assert.equal(alertOutline(a,null,indexGISShapes([feature({...p,...change})]),now),null);
+  }
+  assert.equal(alertOutline({...a,geometry_status:'Active segment boundary unavailable'},null,gis,now),null);
+  assert.equal(alertOutline(a,null,gis,Date.parse(a.expires)),null);
+  const zone=code=>feature({event:a.title,event_id:a.id,issued:a.sent,valid_start:a.effective,valid_end:a.expires,ugc:code});
+  const local=indexWinterShapes([zone('TXZ001'),zone('TXZ002'),zone('TXZ003')]);
+  assert.equal(alertOutline(a,local,gis,now).basis,'NWS forecast zones');
+  const partial=indexWinterShapes([zone('TXZ001'),zone('TXZ003')]);
+  assert.equal(alertOutline(a,partial,null,now).partial,true);
+  assert.match(alertOutline(a,partial,gis,now).basis,/GIS/);
+});
+
+test('a partial upstream GIS transfer cannot be described as a complete national edition',async()=>{
+  const {loadAlertGIS}=await import(new URL('active-alert-shapes.js',root));
+  const fetched=[];
+  const broken=async url=>{
+    fetched.push(new URL(url));
+    return {ok:true,json:async()=>({type:'FeatureCollection',features:[],exceededTransferLimit:true})};
+  };
+  await assert.rejects(loadAlertGIS(broken),/complete NWS/);
+  assert.equal(fetched.length,1);
+  assert.equal(fetched[0].searchParams.get('outSR'),'4326');
+  assert.match(fetched[0].searchParams.get('outFields'),/cap_id/);
+});
+
+test('the packaged radar image matches only its exact source time, content hash, upstream URL and Pages origin',async()=>{
+  const {localRadarImage}=await import(new URL('command-map.js',root));
+  const digest='b'.repeat(64),rootURL='https://example.github.io/idss/assets/',origin='https://example.github.io';
+  const radar={valid_time:'2026-11-26T04:10:38Z',image_url:'https://raw.githubusercontent.com/example/latest.png',
+    image_sha256:digest,local_image:'radar/20261126T041038Z-'+digest+'.png'};
+  const frame={image_url:radar.image_url,valid_time:radar.valid_time};
+  assert.equal(localRadarImage(radar,null,rootURL,origin),rootURL+radar.local_image);
+  assert.equal(localRadarImage(radar,frame,rootURL,origin),rootURL+radar.local_image);
+  for(const changed of [{...frame,valid_time:'2026-11-26T04:00:38Z'},{...frame,image_url:'https://example.com/other.png'}]){
+    assert.equal(localRadarImage(radar,changed,rootURL,origin),null);
+  }
+  assert.equal(localRadarImage({...radar,local_image:'https://other.example/radar.png'},null,rootURL,origin),null);
+  assert.equal(localRadarImage({...radar,image_sha256:'a'.repeat(64)},null,rootURL,origin),null);
+  assert.equal(localRadarImage(radar,null,rootURL,'https://other.example'),null);
 });

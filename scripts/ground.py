@@ -154,6 +154,7 @@ def classify_rivers(stats_response, sites_response, now):
     partial |= invalid_snapshot or len(source_times) != 1
     observed_groups = Counter()
     sites = {}
+    old_ids = set()
     conflicting_ids = set()
     for row in features:
         if not isinstance(row, dict):
@@ -171,8 +172,11 @@ def classify_rivers(stats_response, sites_response, now):
             partial = True
             continue
         if now - observed > timedelta(hours=OBS_HOURS):
+            if lid in sites or lid in old_ids:
+                partial = True
+                conflicting_ids.add(lid)
+            old_ids.add(lid)
             result["excludedOld"] += 1
-            partial = True
             continue
         lat, lon = coordinates(row.get("latitude"), row.get("longitude"))
         waterbody, place = text(row.get("waterbody")), text(row.get("location"))
@@ -185,13 +189,13 @@ def classify_rivers(stats_response, sites_response, now):
             "state": state, "latitude": lat, "longitude": lon, "category": category,
             "observedAt": stamp(observed), "value": value, "unit": unit, "url": WATER + "gauges/" + lid.lower(),
         }
-        if lid in sites and sites[lid] != site:
+        if lid in old_ids or (lid in sites and sites[lid] != site):
             conflicting_ids.add(lid)
-        if lid in sites:
+        if lid in sites or lid in old_ids:
             partial = True
         sites[lid] = site
     for lid in conflicting_ids:
-        del sites[lid]
+        sites.pop(lid, None)
     partial |= any(observed_groups[level] != expected.get(level, 0) for level in FLOOD)
     ranked = sorted(sites.values(), key=lambda s: (FLOOD.index(s["category"]), -instant(s["observedAt"]).timestamp(), s["state"], s["id"]))
     counts = {level: sum(s["category"] == level for s in ranked) for level in FLOOD}

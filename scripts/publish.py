@@ -1,4 +1,5 @@
 """Build a static Pages release from the dedicated IDSS collector's public products."""
+import hashlib
 import json
 import re
 import shutil
@@ -30,8 +31,12 @@ ASSETS = (
     'outage-geo-south.json', 'outage-geo-southeast.json', 'outage-geo-states.json', 'outage-geo-west.json',
     'outage-layer.css', 'outage-layer.js', 'release.js',
     'briefing-focus.js', 'briefing-relief.webp', 'focus-desk.css', 'focus-desk.js',
-    'spectral-license.txt', 'spectral-semibold.woff2',
+    'spectral-license.txt', 'spectral-semibold.woff2', 'impact-strip.js', 'briefing-light-relief.webp',
+    'active-alert-shapes.js', 'browser-recovery.js', 'recovery-observations.js', 'recovery-hazards.js',
+    'recovery-population.js',
 )
+
+GENERATED_CENTER_INDEX = 'recovery-centers.bin.gz'
 
 
 class FixedOrigin(HTTPRedirectHandler):
@@ -139,15 +144,32 @@ def snapshots():
             time.sleep(5 * (attempt + 1))
 
 
+def package_radar_frame(radar, radar_images, assets):
+    """Publish only the actual, already verified bytes associated with this exact source edition."""
+    if not radar or radar.get('status') != 'current':
+        return
+    valid, source, digest = (radar.get(key) for key in ('valid_time', 'image_url', 'image_sha256'))
+    image = radar_images.get((valid, source, digest))
+    if image is None or hashlib.sha256(image).hexdigest() != digest:
+        return
+    name = 'radar/' + stamp(valid).strftime('%Y%m%dT%H%M%SZ') + '-' + digest + '.png'
+    path = assets / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(image)
+    radar['local_image'] = name
+
+
 def publish():
+    from build_browser_centers import build as build_center_index
     from impact_pipeline import collect_impacts
     from weather_layers import collect_weather
     from weather_exposure import add_weather_exposure
     board, handoff = snapshots()
     now = datetime.now(timezone.utc)
+    radar_images = {}
     with ThreadPoolExecutor(max_workers=2) as pool:
         impacts = pool.submit(collect_impacts, board, lambda data: review_fields(data, IMPACT_HOSTS), now)
-        layers = pool.submit(collect_weather, board, lambda data: review_fields(data, WEATHER_HOSTS, hydro=True), now)
+        layers = pool.submit(collect_weather, board, lambda data: review_fields(data, WEATHER_HOSTS, hydro=True), now, radar_images=radar_images)
         board['impacts'] = impacts.result()
         board['weather'] = layers.result()
     add_weather_exposure(board, datetime.now(timezone.utc))
@@ -162,6 +184,8 @@ def publish():
             dest = output / 'assets' / name
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / 'assets' / name, dest)
+        build_center_index(output / 'assets' / GENERATED_CENTER_INDEX)
+        package_radar_frame(board['weather'].get('radar'), radar_images, output / 'assets')
         for name, document in [('board', board), ('handoff', handoff)]:
             (output / 'data' / f'{name}.json').write_text(json.dumps(document, ensure_ascii=False, separators=(',', ':'), allow_nan=False), encoding='utf-8')
         destination = ROOT / '_site'

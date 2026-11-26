@@ -1,3 +1,4 @@
+import {gaugeTally} from './impact-strip.js';
 import {isoTime, safeURL, readable, refs} from './logic.js';
 import {ERO_COLORS} from './hazard-palette.js';
 import {links, countText, freshImpact, activeAirEvents, currentRivers, currentGroundReports, exposureRecords, residentCount, impactNames, recent} from './impact-logic.js';
@@ -22,30 +23,43 @@ function metric(label,value,detail,iconName,product,accent,extra='') {
   return `<button type="button" class="metric metric-${product}" data-impact-layer="${product}" style="--metric-accent:${accent}" aria-label="Show ${esc(label.toLowerCase())} on the map" aria-pressed="false"><span class="metric-label">${esc(label)}</span><span class="symbol"><svg aria-hidden="true"><use href="#i-${iconName}"/></svg></span><strong>${esc(value)}</strong><span class="context">${esc(detail)}</span>${extra}</button>`;
 }
 
-const selected={record:'ero-d1',state:'',band:'',powerLevel:'auto'};
+const selected={record:'ero-d1',state:'',band:'',powerLevel:'auto',focusLabel:'',focusSource:''};
 export function selectedExposure(board,now=Date.now()) {
-  const recs=exposureRecords(board,now), record=recs.find(r=>r.id===selected.record)||recs[0];
+  const recs=exposureRecords(board,now);
+  let record=recs.find(r=>r.id===selected.record);
+  if (!record && !selected.focusLabel) record=recs[0];
   const band=(record?.bands||[]).find(b=>b.id===selected.band)||null;
-  return {record,band,state:selected.state,recs};
+  if (selected.focusLabel && selected.band && !band) record=null;
+  return {record:record||null,band,state:selected.state,recs};
+}
+export function selectExposureFocus(board,choice,now=Date.now()) {
+  selected.record=choice && Object.hasOwn(choice,'population') && !Number.isFinite(choice.population) ? '' : choice?.recordId||'';
+  selected.band=choice?.bandId||'';
+  selected.state='';
+  selected.focusLabel=choice?.label||'the selected hazard';
+  selected.focusSource=choice?.sourceUrl||'';
+  return Boolean(selectedExposure(board,now).record);
 }
 export const powerLevel=()=>selected.powerLevel;
 export function setPowerLevel(value) {
   if(['auto','state','county'].includes(value)) selected.powerLevel=value;
 }
 function metrics(board,onMap) {
+  if(!byId('impact-metrics'))return;
   const {aviation:a,power:p,ground:g}=board.impacts||{};
   const rivers=g?.rivers,eventCount=activeAirEvents(a).length;
   const airCount=freshImpact(a,Date.now(),30)&&a.event_count!==null?new Set(activeAirEvents(a).map(e=>e.airport)).size:null;
   const day=exposureRecords(board).find(r=>r.id==='ero-d1');
   const topBand=(day?.bands||[]).filter(b=>b.population>0).sort((x,y)=>y.rank-x.rank)[0];
-  const riverSites=currentRivers(rivers);
-  const groundKey=freshImpact(rivers,Date.now(),60)&&rivers.total!==null ? `<span class="gauge-key">${['major','moderate','minor'].map(c=>`<span><i class="flood-${c}"></i>${riverSites.filter(r=>r.category===c).length} ${c}</span>`).join('')}</span>`:'';
+  const river=gaugeTally(rivers);
+  const groundValue=(river.minimum?'≥':'')+countText(river.n);
+  const groundKey=river.rows.length ? `<span class="gauge-key">${[...river.rows].reverse().map(r=>`<span><i class="flood-${r.label}"></i>${r.value} ${r.label}</span>`).join('')}</span>`:'';
   const outageLeader=freshImpact(p,Date.now(),35)&&p.states_status==='current'&&recent(p.states_as_of,Date.now(),35)?p.states?.find(s=>s.customers_out>0):null;
   const leadAir=activeAirEvents(a).find(e=>e.delay);
   byId('impact-metrics').innerHTML=metric('Customers without power',short(freshImpact(p,Date.now(),35)?p.customers_out:null),outageLeader?`Largest state count: ${outageLeader.name} · ${countText(outageLeader.customers_out)}`:'U.S. reporting utilities · all causes','power','power','#FEC65B')+
    metric('Airports with FAA notices',countText(airCount),leadAir?`${leadAir.airport} · ${leadAir.label.toLowerCase()} · ${leadAir.delay}`:airCount===null?'Current FAA programs unavailable':`${eventCount} active ${eventCount===1?'notice':'notices'}`,'plane','aviation','#8ACBFF')+
    metric(topBand?`Residents in ${topBand.label} Risk`:'Residents in Day 1 ERO',short(topBand?.population??day?.population),topBand?'Day 1 excessive rainfall · 2020 Census':'2020 Census · forecast exposure','people','exposure',ERO_COLORS[topBand?.label]||'#9fddd7')+
-   metric('Gauges in flood',countText(freshImpact(rivers,Date.now(),60)&&rivers.total!==null?riverSites.length:null),groundKey?'Observed flood stage':'NWPS · last six hours','ground','ground','#92b8df',groundKey);
+   metric('Gauges in flood',groundValue,river.minimum?'Partial network count':groundKey?'Observed flood stage':'NWPS · last six hours','ground','ground','#92b8df',groundKey);
   for(const btn of document.querySelectorAll('[data-impact-layer]'))btn.onclick=()=>onMap(btn.dataset.impactLayer,true);
 
 }
@@ -78,7 +92,20 @@ function airPanel(a) {
 function exposurePanel(board,onMap,openBrief) {
   const {recs,record,band,state}=selectedExposure(board);
   const container=byId('exposure-panel');
-  if(!record){container.innerHTML=unavailable('hazard exposure',board.impacts?.exposure)+sourceLine([url(links.census,'U.S. Census Bureau')]);return;}
+  function chooseProduct(e) {
+    if (!e.target.value) return;
+    selected.record=e.target.value;selected.band='';selected.state='';selected.focusLabel='';selected.focusSource='';
+    exposurePanel(board,onMap,openBrief);onMap('exposure',false);
+  }
+  if(!record){
+    const alternate=selected.focusLabel && recs.length ? formSelect('exposure-product','Choose a different footprint',[
+      ['','Choose a footprint',true],...recs.map(r=>[r.id,r.menuLabel||r.label,false])
+    ]) : '';
+    const status=selected.focusLabel ? note('A current population estimate is unavailable for '+selected.focusLabel+'.') : unavailable('hazard exposure',board.impacts?.exposure);
+    container.innerHTML=status+alternate+sourceLine([url(selected.focusSource,'Issued hazard'),url(links.census,'U.S. Census Bureau')]);
+    if(alternate)byId('exposure-product').onchange=chooseProduct;
+    return;
+  }
   selected.record=record.id;
   const options=recs.map(r=>[r.id,r.menuLabel||r.label,r.id===record.id]);
   const bands=record.bands||[], geography=band?.states||record.states||[];
@@ -100,7 +127,7 @@ function exposurePanel(board,onMap,openBrief) {
   container.innerHTML=html+note(method)+sourceLine([url(links.census,'2020 U.S. Census'),source?url(source,'Issued hazard'):null],record.as_of||board.impacts.exposure.calculated_at);
   container.insertAdjacentHTML('beforeend','<button class="button small use-footprint" id="brief-with-footprint" type="button">Use this footprint in a media brief</button>');
   byId('brief-with-footprint').onclick=()=>openBrief(record,band,region);
-  byId('exposure-product').onchange=e=>{selected.record=e.target.value;selected.band='';selected.state='';exposurePanel(board,onMap,openBrief);onMap('exposure',false);};
+  byId('exposure-product').onchange=chooseProduct;
   const pick=byId('exposure-band');if(pick)pick.onchange=e=>{selected.band=e.target.value;exposurePanel(board,onMap,openBrief);onMap('exposure',false);};
   byId('exposure-state').onchange=e=>{selected.state=e.target.value;exposurePanel(board,onMap,openBrief);onMap('exposure',false);};
 }
@@ -108,14 +135,18 @@ function groundPanel(g) {
   const rivers=g?.rivers, reports=g?.reports, gauges=currentRivers(rivers), rr=currentGroundReports(reports);
   let html='';
   if(freshImpact(reports,Date.now(),60)) {
-    html+=summary(reports.total==null?'Partial':countText(rr.length),'preliminary reports of disruption · past '+reports.periodHours+' h');
+    const complete=reports.status!=='partial' && Number.isSafeInteger(reports.total);
+    const tally=complete ? countText(reports.total) : reports.availableCount>0?'At least '+countText(reports.availableCount):'Unavailable';
+    html+=summary(tally,'preliminary disruption reports · '+reports.periodHours+' h ending '+when(reports.asOf));
     if(rr.length)html+=table(['Impact','Location','Observed UTC'],rr.slice(0,4).map(r=>[url(r.url,(r.categories||[]).map(k=>impactNames[k]||readable(k)).join(' · ')),esc(r.location+', '+r.state),esc(when(r.observedAt))]));
     else html+=note('No qualifying disruptions in the available NWS reports for this window.');
   } else html+=unavailable('ground-impact report',reports);
-  if(freshImpact(rivers,Date.now(),60)){
-    const cn=k=>gauges.filter(r=>r.category===k).length;
-    html+=`<h4>Observed flooding at gauges</h4>`+note((rivers.total==null?'Available sites · ':'')+`${cn('major')} major · ${cn('moderate')} moderate · ${cn('minor')} minor`);
-    if(gauges.length)html+=extendedList('View '+gauges.length+' gauge observations',table(['Gauge','Observed category','Reading UTC'],gauges.map(r=>[url(r.url,r.name+', '+r.state),esc(readable(r.category))+(Number.isFinite(r.value)?`<span class="meta">${esc(r.value)} ${esc(r.unit)}</span>`:''),esc(when(r.observedAt))])));
+  const river=gaugeTally(rivers);
+  if(['current','partial'].includes(river.status)){
+    const total=river.n===null ? 'A complete gauge count is unavailable.' : (river.minimum?'At least ':'')+countText(river.n)+(river.n===1?' gauge':' gauges')+' at minor flood stage or higher.';
+    const stages=[...river.rows].reverse().map(r=>r.value+' '+r.label).join(' · ');
+    html+='<h4>Observed flooding at gauges</h4>'+note([total,stages].filter(Boolean).join(' '));
+    if(gauges.length)html+=extendedList('View '+gauges.length+' listed gauge observations',table(['Gauge','Observed category','Reading UTC'],gauges.map(r=>[url(r.url,r.name+', '+r.state),esc(readable(r.category))+(Number.isFinite(r.value)?`<span class="meta">${esc(r.value)} ${esc(r.unit)}</span>`:''),esc(when(r.observedAt))])));
   }else html+=unavailable('river gauge',rivers);
   byId('ground-panel').innerHTML=html+sourceLine([url(links.reports,'Preliminary NWS reports via IEM')],reports?.asOf)+sourceLine([url(links.rivers,'NOAA river observations')],rivers?.asOf);
 }

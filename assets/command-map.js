@@ -1,10 +1,11 @@
-import {ASSET_ROOT,MAP_REGIONS,geometryNear,mountBase} from './geographic-base.js';
+import {ASSET_ROOT,MAP_REGIONS,geometryNear,mountBase,BASEMAP_CHOICES} from './geographic-base.js';
 import {utc,detailNode,decorate,observationsOnMap,reportPoint,POINT_COLORS,POINT_LABELS} from './map-points.js';
-import {activeDay,activeWinter,activeOutlook,currentAlerts,currentReports,refs} from './logic.js';
+import {activeDay,activeWinter,activeOutlook,currentAlerts,currentReports,moduleState,refs} from './logic.js';
 import {activeAirEvents,currentRivers,currentGroundReports,exposureRecords,gaugeColors,impactNames,links} from './impact-logic.js';
 import {ERO_COLORS,ERO_OUTLINES,WSSI_COLORS,EXTENDED_COLORS,alertStyle,inkFor} from './hazard-palette.js';
 import {resolveAlertZones} from './alert-zones.js';
-export {MAP_REGIONS};
+import {alertOutline,indexWinterShapes,loadAlertGIS} from './active-alert-shapes.js';
+export {MAP_REGIONS,BASEMAP_CHOICES};
 
 const GOOD=new Set(['ok','current','partial','active','published','none']);
 const fmt=n=>Number.isFinite(n)?n.toLocaleString('en-US'):'';
@@ -20,6 +21,16 @@ const imageBounds=b=>Array.isArray(b)&&b.length===2&&b.every(p=>Array.isArray(p)
 function imageURL(value,allowEmbedded) {
   if(allowEmbedded&&typeof value==='string'&&value.startsWith('data:image/png;base64,'))return value;
   return safeSource(value);
+}
+export function localRadarImage(radar,frame,assetRoot,pageOrigin){
+  if(!radar?.local_image||!/^[a-f0-9]{64}$/.test(radar.image_sha256||''))return null;
+  const time=Date.parse(radar.valid_time);
+  if(!Number.isFinite(time)||frame&&(Date.parse(frame.valid_time)!==time||frame.image_url!==radar.image_url))return null;
+  const stamp=new Date(time).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+  const path='radar/'+stamp+'-'+radar.image_sha256+'.png';
+  if(radar.local_image!==path)return null;
+  const url=new URL(path,assetRoot);
+  return url.origin===pageOrigin?url.href:null;
 }
 // Only current issued geometry belongs to the briefing outline. Forecast windows can start later.
 export function briefingFeatures(input,now=Date.now()){
@@ -46,6 +57,19 @@ function briefingStyle(f,selection) {
     ||(hazard&&alertStyle(hazard).known?alertStyle(hazard).color:null)||selection.color;
   return {title,color:cleanColor(color)};
 }
+export function outageMapReading(status) {
+  const level=status.level==='county'?'County':'State';
+  const time=utc(status.as_of);
+  const period=time?' · '+time:'';
+  let reading;
+  if(status.status==='current')reading=level+' readings'+period+'. Reported electric customer accounts without power.';
+  else if(status.status==='stale')reading=level+' outage readings have expired'+period+'. Current counts are unavailable.';
+  else if(status.status==='inconsistent')reading=level+' outage reporting geography is inconsistent'+period+'.';
+  else reading=level+' outage readings are unavailable'+period+'.';
+  if(status.geometry_status==='unavailable')reading+=' The geographic boundaries could not be loaded.';
+  else if(status.geometry_status==='partial')reading+=' Some geographic boundaries could not be loaded.';
+  return reading;
+}
 function makePanes(map) {
   // Leaflet tilePane is 200, tooltipPane is 650 and popupPane is 700.
   for(const [name,z] of Object.entries({land:155,backdrop:170,hydrography:180,outages:340,raster:348,forecast:370,counties:399,borders:410,alerts:430,mpds:445,briefing:447,labels:450,points:510,callouts:525,selected:535})) {
@@ -65,16 +89,17 @@ export function mountCommandMap(container,options={}) {
     zoomControl:options.zoomControl??!doc.getElementById('zoom-in'),preferCanvas:false,attributionControl:true,zoomAnimation:true});
   makePanes(map);
   const scene=L.layerGroup().addTo(map), reportsLayer=L.layerGroup().addTo(map), selectedLayer=L.layerGroup().addTo(map);
-  const briefingLayer=L.layerGroup().addTo(map);
+  const briefingLayer=L.layerGroup().addTo(map),warningsLayer=L.layerGroup().addTo(map);
   const state={board:null,briefingFocus:null,product:'ero1',reportHours:48,observation:'all',source:'all',winterLayer:'wssi_d1_3',radarFrame:null,
     layers:{alerts:false,reports:true,radar:false,winter:false,mpds:true,counties:false}};
   let dead=false,ref=null,points=[],pointIndex=new Map(),pointTimer,autopanning=false,selectionEpoch=0,legendSerial='',lastLegend=null;
   let countyLayer=null,countyEpoch=0,countyRenderer=null;
-  let powerLayer=null,powerImport=null,powerSignature=null,powerLegend=[],previousPowerMode=null,previousPowerActive=null;
+  let powerLayer=null,powerImport=null,powerSignature=null,powerStatus=null,powerLayers=null,previousPowerMode=null,previousPowerActive=null;
   const zoneCache=new Map();
+  let gisShapes=null,gisPending=false,gisAfter=0,gisFailed=false,warningCache=null;
   let briefingCache=null;
   let radarKey='',radarImage=null,radarInfo=null;
-  const base=mountBase(L,map,{root,style:options.basemap,tiles:options.tiles??true,onStatus:emitStatus,onReference:g=>{ref=g;if(state.product==='exposure')render();}});
+  const base=mountBase(L,map,{root,style:options.basemap,tiles:options.tiles??true,showControl:options.basemapControl!==false,onStyleChange:options.onBasemapChange,onStatus:emitStatus,onReference:g=>{ref=g;if(state.product==='exposure')render();}});
   function emitStatus(info){if(!dead)options.onStatus?.(info);}
   function emitLegend(items,note,phase='') {
     const unique=items.filter((v,i)=>v?.label&&items.findIndex(t=>t?.label===v.label&&t?.color===v.color&&t?.shape===v.shape)===i);
@@ -105,26 +130,87 @@ export function mountCommandMap(container,options={}) {
     return attach(f.geometry||f,{color:extra.outline||color,fillColor:color,weight:extra.weight||1.8,
       fill:!extra.outlineOnly,fillOpacity:extra.opacity??.31,opacity:.98,dashArray:extra.dash||undefined},info,extra.pane||'forecast');
   }
-  function alertArea(g,a,info,coverage) {
+  function alertArea(g,a,info,coverage,dest=scene,filled) {
     const spec=alertStyle(a);if(!spec.visible)return;
-    const color=spec.color,prog=state.product==='alerts'||state.product==='warnings'||state.winterLayer==='winter_alerts'&&state.product==='winter';
-    attach(g,{color:inkFor(color),weight:3.7,fill:false,opacity:.85,interactive:false},null,'alerts');
-    attach(g,{color,fillColor:color,weight:2.1,fill:prog,fillOpacity:.28,dashArray:spec.known?null:'5 3'},
-      info||{kind:'NWS alert',title:a.title,lines:[a.area,coverage,'Expires '+utc(a.expires)].filter(Boolean),url:safeSource(a.source_url)},'alerts');
+    const color=spec.color,prog=filled??(state.product==='alerts'||state.product==='warnings'||state.winterLayer==='winter_alerts'&&state.product==='winter');
+    const national=dest===warningsLayer;
+    attach(g,{color:inkFor(color),weight:national?2.2:3.7,fill:false,opacity:national?.7:.85,interactive:false},null,'alerts',dest);
+    attach(g,{color,fillColor:color,weight:national?1.3:2.1,fill:prog,fillOpacity:national?.49:.28,dashArray:spec.known?null:'5 3'},
+      info||{kind:'NWS alert',title:a.title,lines:[a.area,coverage,'Expires '+utc(a.expires)].filter(Boolean),url:safeSource(a.source_url)},'alerts',dest);
+  }
+  function wantsWarnings(){
+    return state.product==='alerts'||state.product==='warnings'||state.layers.alerts;
+  }
+  function requestWarningShapes(){
+    if(gisPending||Date.now()<gisAfter)return;
+    gisPending=true;
+    loadAlertGIS(options.fetcher||globalThis.fetch).then(result=>{
+      gisShapes=result;gisFailed=false;gisAfter=Date.now()+300000;
+    }).catch(()=>{
+      gisFailed=true;gisAfter=Date.now()+120000;
+    }).finally(()=>{
+      gisPending=false;
+      if(!dead&&wantsWarnings())render();
+    });
+  }
+  function generalWarnings(board,w,now,items,notes){
+    const warnings=currentAlerts(board,now).filter(a=>alertStyle(a).visible);
+    const rawWinter=w?.layers?.find(l=>l.id==='winter_alerts');
+    const winterZones=fresh(rawWinter,now)&&validUntil(rawWinter.valid_end,now)?rawWinter:null;
+    const filled=state.product==='alerts'||state.product==='warnings';
+    const signature=warnings.map(a=>a.id+'/'+(a.ugc?.length||0)).join('|');
+    const center=map.getCenter().lng;
+    if(!warningCache||warningCache.source!==board?.sources?.alerts||warningCache.signature!==signature||
+      warningCache.winter!==winterZones||warningCache.gis!==gisShapes||warningCache.filled!==filled||
+      Math.abs(warningCache.center-center)>75||now>=warningCache.until){
+      warningsLayer.clearLayers();
+      const winterIndex=indexWinterShapes(winterZones?.features);
+      const shown=new Map(),byId=new Map();
+      let missing=0,partial=0,zoneOnly=0,until=Infinity;
+      for(const feature of winterZones?.features||[]){
+        for(const val of [feature.properties?.valid_start,feature.properties?.valid_end]){
+          const t=Date.parse(val);if(t>now&&t<until)until=t;
+        }
+      }
+      for(const alert of warnings.sort((a,b)=>alertStyle(b).priority-alertStyle(a).priority)){
+        const layer=alertOutline(alert,winterIndex,gisShapes,now);
+        if(!alert.geometry?.length)zoneOnly++;
+        if(!layer){missing++;continue;}
+        if(layer.partial)partial++;
+        byId.set(alert.id,layer);shown.set(alert.title,alertStyle(alert).color);
+        for(const geometry of layer.geometry)alertArea(geometry,alert,null,layer.basis,warningsLayer,filled);
+      }
+      warningCache={source:board?.sources?.alerts,signature,winter:winterZones,gis:gisShapes,filled,center,
+        until,byId,missing,partial,zoneOnly,legend:Array.from(shown,([title,color])=>key(title,color,'line'))};
+    }
+    const {byId,missing,partial,zoneOnly,legend}=warningCache;
+    container.dataset.mappedAlerts=String(byId.size);
+    items.push(...legend);
+    if(warnings.length){
+      notes.push(byId.size+' of '+warnings.length+' active alert bulletins mapped.');
+      if(partial)notes.push(partial+' with partial zone coverage.');
+      if(zoneOnly&&(missing||partial||gisShapes))requestWarningShapes();
+      if(missing)notes.push(gisPending?'Loading NWS zone boundaries.':gisFailed?'Some zone boundaries are unavailable.':'Select an unmapped alert to look up its official NWS zones.');
+    }else if(filled){
+      const status=moduleState(board,'alerts',now);
+      notes.push(['ok','current'].includes(status)?'No active NWS bulletins with a map color.':
+        status==='partial'?'NWS alert coverage is partial.':'Current NWS alerts are unavailable.');
+    }
   }
   function winter(w,now,items,notes) {
     const selected=w?.layers?.find(l=>l.id===state.winterLayer);
-    if(!selected) {
-      if(state.winterLayer!=='wssi_d1_3'){notes.push('This winter product is unavailable.');return;}
+    if(!fresh(selected,now)||!validUntil(selected?.valid_end,now)) {
+      if(state.winterLayer!=='wssi_d1_3'){notes.push(selected?selected.title+' · current layer unavailable.':'This winter product is unavailable.');return;}
       const active=activeWinter(state.board,now);
       if(!active){notes.push('The winter impact forecast is unavailable.');return;}
       const used=new Set();
-      for(const f of active.features||[]){const p=f.properties||{},c=WSSI_COLORS[p.impact];if(!c)continue;
-        used.add(p.impact);addFeature(f,c,p.impact+' winter impacts',[period(active.valid_start,active.valid_end)],p.source_url||refs.winter);}
+      const levels=['Moderate','Major','Extreme'];
+      const features=[...(active.features||[])].sort((a,b)=>levels.indexOf(a.properties?.impact)-levels.indexOf(b.properties?.impact));
+      for(const f of features){const p=f.properties||{},c=WSSI_COLORS[p.impact];if(!levels.includes(p.impact)||!c)continue;
+        used.add(p.impact);addFeature(f,c,p.impact+' winter impacts',[period(active.valid_start,active.valid_end)],p.source_url||active.source_url||refs.winter,{testId:'idss-wssi'});}
       for(const [name,c] of Object.entries(WSSI_COLORS))if(used.has(name))items.push(key(name,c));
-      notes.push('WSSI · '+period(active.valid_start,active.valid_end));return;
+      notes.push('WPC Days 1–3 WSSI · Moderate, Major and Extreme · '+period(active.valid_start,active.valid_end));return;
     }
-    if(!fresh(selected,now)||!validUntil(selected.valid_end,now)){notes.push(selected.title+' · current layer unavailable.');return;}
     if(selected.kind==='raster'){
       const url=imageURL(selected.image_url,true);
       if(selected.projection==='EPSG:3857'&&imageBounds(selected.bounds)&&url) {
@@ -153,12 +239,29 @@ export function mountCommandMap(container,options={}) {
     const frames=Array.isArray(r?.frames)?r.frames:[], frame=Number.isInteger(state.radarFrame)?frames[state.radarFrame]:null;
     const url=imageURL(frame?.image_url||r?.image_url,false);
     const ok=active&&fresh(r,now)&&r?.projection==='EPSG:3857'&&imageBounds(r?.bounds)&&url;
-    const id=ok?url+JSON.stringify(r.bounds):'';
+    const local=ok?localRadarImage(r,frame,root,doc.location.origin):null;
+    const id=ok?JSON.stringify([url,local,r.bounds]):'';
     if(id!==radarKey){
       if(radarImage)map.removeLayer(radarImage);radarImage=null;radarKey=id;
-      if(id){radarImage=L.imageOverlay(url,r.bounds,{pane:'idss-raster',opacity:.78,interactive:false,className:'idss-radar-raster'}).addTo(map);
-        radarImage.getElement()?.setAttribute('data-testid','idss-radar-raster');radarImage.getElement()?.setAttribute('data-valid-time',frame?.valid_time||r.valid_time||'');
-        radarImage.on('error',()=>{if(radarKey===id)emitStatus({layer:'radar',status:'unavailable',message:'Radar image could not be loaded.'});});
+      if(id){
+        let tryingLocal=Boolean(local);
+        const overlay=L.imageOverlay(local||url,r.bounds,{pane:'idss-raster',opacity:.78,interactive:false,className:'idss-radar-raster'});
+        radarImage=overlay;
+        overlay.on('error',()=>{
+          if(dead||radarKey!==id||radarImage!==overlay)return;
+          overlay.setOpacity(0);
+          if(tryingLocal){
+            tryingLocal=false;overlay.getElement()?.setAttribute('data-radar-source','upstream');
+            overlay.setUrl(url);
+          }else emitStatus({layer:'radar',status:'unavailable',message:'Radar image could not be loaded.'});
+        });
+        overlay.on('load',()=>{
+          if(!dead&&radarKey===id&&radarImage===overlay){overlay.setOpacity(.78);emitStatus({layer:'radar',status:'current'});}
+        });
+        overlay.addTo(map);
+        const element=overlay.getElement();
+        element?.setAttribute('data-testid','idss-radar-raster');element?.setAttribute('data-valid-time',frame?.valid_time||r.valid_time||'');
+        element?.setAttribute('data-radar-source',tryingLocal?'pages':'upstream');
       }
     }
     radarInfo=ok?{url,valid_time:frame?.valid_time||r.valid_time}:null;
@@ -343,6 +446,11 @@ export function mountCommandMap(container,options={}) {
     pointIndex=observationsOnMap(L,map,reportsLayer,[...featured,...(ids.size?points.filter(p=>!ids.has(p.id)):points)],{onDetail:options.onDetail,source,category,doc});
     if(featured.length)drawReportLabels(featured,occupied,selection.reportScope);
   }
+  function writePowerLegend(){
+    if(!powerLayers||!isPower(state.product))return;
+    const countNote=powerStatus?outageMapReading(powerStatus):'Loading outage boundaries and readings.';
+    emitLegend([...powerLayers.items,...(powerStatus?.legend||[])],[...powerLayers.notes,countNote].join(' '),'Outages');
+  }
   function setPower(active,source) {
     const mode=state.product==='power-county'?'counties':state.product==='power-state'?'states':(state.powerMode||'auto');
     if(powerLayer){
@@ -354,9 +462,16 @@ export function mountCommandMap(container,options={}) {
     if(!active||powerImport)return;
     const factory=options.powerFactory||globalThis.WPCOutages?.create;
     powerImport=(factory?Promise.resolve(factory):import('./outage-layer.js').then(m=>m.createOutageLayer)).then(create=>{
-      if(dead)return;powerLayer=create({map,L,assetBase:root,showLegend:false,
-        onSelect:p=>options.onDetail?.({...p,title:p.name||p.label,detail:p.label,url:'https://poweroutmap.com/'}),
-        onStatus:p=>{powerLegend=p.legend||[];emitStatus({layer:'power',...p});if(isPower(state.product))emitLegend(powerLegend,'Reported electric customer accounts without power · '+(utc(p.as_of)||'time unverified'),'Outages');}});
+      if(dead)return;powerLayer=create({map,L,assetBase:root,showLegend:false,now:()=>nowValue(options.now),
+        onSelect:p=>options.onDetail?.({...p,title:p.title||p.name||p.label,lines:[p.label,utc(p.as_of)].filter(Boolean),url:'https://poweroutmap.com/'}),
+        onStatus:p=>{
+          if(!isPower(state.product))return;
+          powerStatus=p;
+          container.dataset.outageLevel=p.level;
+          container.dataset.outageStatus=p.status;
+          container.dataset.outageFeatures=String(p.visible_features);
+          writePowerLegend();
+        }});
       powerSignature=null;setPower(isPower(state.product),state.power||state.board?.impacts?.power);
     }).catch(()=>{powerImport=null;emitStatus({layer:'power',status:'unavailable',message:'Outage geography could not be loaded.'});});
   }
@@ -398,16 +513,8 @@ export function mountCommandMap(container,options={}) {
     if(prod==='winter'||l.winter)winter(w,now,items,notes);
     if(prod==='exposure'&&board)exposure(board,now,items,notes);
     if(prod==='aviation'||prod==='ground'){if(board)points=impactPoints(board,prod,now,items,notes);}
-    if(prod==='alerts'||prod==='warnings'||l.alerts){
-      const warnings=currentAlerts(board,now),shown=new Map();let zones=0;
-      for(const a of [...warnings].sort((a,b)=>alertStyle(b).priority-alertStyle(a).priority)){
-        const spec=alertStyle(a);if(!spec.visible)continue;
-        if(!a.geometry?.length){zones++;continue;}
-        shown.set(a.title,spec.color);for(const g of a.geometry)alertArea(g,a,null,a.geometry_status);
-      }
-      for(const [k,c] of shown)items.push(key(k,c,'line'));
-      if(zones)notes.push(zones+' zone-based messages have no published polygon in this layer. Select an alert for its NWS zones.');
-    }
+    if(wantsWarnings())generalWarnings(board,w,now,items,notes);
+    else if(warningCache){warningsLayer.clearLayers();warningCache=null;delete container.dataset.mappedAlerts;}
     if((state.mpds||weather.mpd||prod==='mpd'||prod==='mpds')&&(prod==='mpd'||prod==='mpds'||l.mpds))mpd(m,now,items,notes);
     drawBriefing(now,items);
     radar(prod==='radar'||prod==='briefing'||l.radar,r,now,items,notes);
@@ -421,8 +528,15 @@ export function mountCommandMap(container,options={}) {
       if(prod==='observations'||prod==='evidence'||prod==='reports')notes.push(points.length+' located, preliminary observations in the preceding '+hours+' hours.'+(ob?.unlocated?.length?' '+ob.unlocated.length+' reports have no qualified coordinates.':''));
     }
     points=points.filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lon));drawPoints();
-    if(isPower(prod)){items.push(...powerLegend);notes.push('Reported electric customer accounts without power.');}
-    drawCounties();emitLegend(items,notes.join(' '));setPower(isPower(prod),state.power||board?.impacts?.power);
+    if(isPower(prod)){
+      powerLayers={items,notes};
+      writePowerLegend();
+    }else{
+      powerLayers=null;powerStatus=null;
+      delete container.dataset.outageLevel;delete container.dataset.outageFeatures;delete container.dataset.outageStatus;
+      emitLegend(items,notes.join(' '));
+    }
+    drawCounties();setPower(isPower(prod),state.power||board?.impacts?.power);
   }
   function update(fields={}) {
     if(dead)return;const productChanged=fields.product!==undefined&&fields.product!==state.product;const {layers,...rest}=fields;Object.assign(state,rest);
@@ -437,11 +551,14 @@ export function mountCommandMap(container,options={}) {
     if(typeof input==='string')input={id:input};
     const poi=pointIndex.get(input.id)||points.find(p=>p.id===input.id);
     const alert=state.board&&input.id&&!poi?currentAlerts(state.board,nowValue(options.now)).find(a=>a.id===input.id):null;
-    const record=poi||alert||input,lat=record.latitude??record.lat,lon=record.longitude??record.lon;
-    const geo=record.geometry, g=Array.isArray(geo)?geo:geo?.type==='Feature'?[geo.geometry]:geo?[geo]:[];
+    const record=poi||(alert?{...alert,...input}:input),lat=record.latitude??record.lat,lon=record.longitude??record.lon;
+    const geo=record.geometry;
+    const hasGeometry=Array.isArray(geo)?geo.length>0:Boolean(geo?.type);
+    const filled=alert&&!hasGeometry?warningCache?.byId.get(alert.id):null;
+    const g=filled?.geometry||(Array.isArray(geo)?geo:geo?.type==='Feature'?[geo.geometry]:geo?[geo]:[]);
     const tag=++selectionEpoch;selectedLayer.clearLayers();
     const info={title:record.title||record.label||record.name||'Selected location',detail:record.detail||record.area||'',
-      lines:record.lines||[record.area||record.detail,record.observedAt&&utc(record.observedAt)].filter(Boolean),url:safeSource(record.url||record.source_url),kind:record.source||'Map selection'};
+      lines:record.lines||[record.area||record.detail,filled?.basis,record.observedAt&&utc(record.observedAt)].filter(Boolean),url:safeSource(record.url||record.source_url),kind:record.source||'Map selection'};
     if(g.length){
       let bounds;
       for(const shape of g){const picked=attach(shape,{color:container.dataset.basemap==='dark'?'#FFF4D9':'#082235',weight:3.8,dashArray:'7 3',fill:false},info,'selected',selectedLayer);
@@ -465,6 +582,7 @@ export function mountCommandMap(container,options={}) {
   syncView();
   function viewChanged() {
     if(dead)return;syncView();drawCounties();clearTimeout(pointTimer);
+    if(warningCache&&Math.abs(map.getCenter().lng-warningCache.center)>75)render();
     if(autopanning)autopanning=false;else pointTimer=setTimeout(()=>{if(!dead)drawPoints();},45);
     options.onViewChange?.({center:map.getCenter(),zoom:map.getZoom(),bounds:map.getBounds()});
   }

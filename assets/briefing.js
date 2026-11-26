@@ -1,7 +1,8 @@
-import {readRelease} from './release.js';
+import {readRelease,recoverRelease} from './release.js';
+import {mountImpactStrip} from './impact-strip.js';
 import {mountFocusDesk} from './focus-desk.js';
 import {currentRadar} from './browser-radar.js';
-import {renderImpacts,selectedExposure,powerLevel,setPowerLevel} from './impacts.js';
+import {renderImpacts,selectedExposure,selectExposureFocus,powerLevel,setPowerLevel} from './impacts.js';
 import {exposureRecords,currentGroundReports,impactNames} from './impact-logic.js';
 import {inkFor} from './hazard-palette.js';
 import {officeCodes} from './offices.js';
@@ -31,6 +32,26 @@ const blankScope=()=>({name:'',states:[],wfos:[],family:'',hours:24,exposure_id:
 let board=null, handoff=null, map=null, mapModuleFailed=false, product='radar', currentImpact='exposure', loading=false;
 let scope=blankScope(), briefText='', catalogPage=0, catalogRows=[], legend=null, loop=null, frame=null, frameStamp=null;
 const notices=new Map();
+const views = new Set([...document.querySelectorAll('[data-view]')].map(el=>el.dataset.view));
+let appearance=document.documentElement.dataset.theme==='light'?'light':'dark';
+function applyAppearance(theme,persist=false) {
+  appearance=theme;
+  document.documentElement.dataset.theme=theme;
+  const target=theme==='dark'?'light':'dark';
+  const label=target==='light'?'Light mode':'Dark mode';
+  const button=$('theme-toggle');
+  button.querySelector('span').textContent=label;
+  button.querySelector('use').setAttribute('href','#i-'+(target==='light'?'sun':'moon'));
+  button.setAttribute('aria-label','Switch to '+target+' mode');
+  button.title='Switch to '+target+' mode';
+  document.querySelector('meta[name="theme-color"]').content=theme==='dark'?'#0b1521':'#f3f4f1';
+  $('base-style').value=theme;
+  map?.setBasemap(theme);
+  if(persist){try{localStorage.setItem('wpc-idss-appearance',theme);}catch{}}
+}
+$('theme-toggle').onclick=()=>applyAppearance(appearance==='dark'?'light':'dark',true);
+$('base-style').onchange=e=>map?.setBasemap(e.target.value);
+applyAppearance(appearance);
 function writeDetail(info) {
   if(!info)return;
   const el=$('map-detail'), lines=info.lines?.length?info.lines:info.detail?[info.detail]:[];
@@ -83,6 +104,13 @@ function radarFrames(){return validRadar()?(board.weather.radar.frames||[]).filt
 function syncControls() {
   $('power-control').hidden=product!=='power'; $('map-power-level').value=powerLevel();
   $('winter-control').hidden=product!=='winter'; $('observation-control').hidden=product!=='observations';
+  const primary=product==='winter'&&$('winter-layer').value==='winter_alerts'?'winter_alerts':product;
+  const enabled=new Set([primary]);
+  for(const [id,layer] of Object.entries({'show-radar':'radar','show-alerts':'alerts','show-mpds':'mpd','show-reports':'observations','show-counties':'counties'})){
+    if($(id).checked)enabled.add(layer);
+  }
+  $('layer-count').textContent=String(enabled.size);
+  $('layer-count').setAttribute('aria-label',enabled.size+' active map '+(enabled.size===1?'layer':'layers'));
   const frames=radarFrames(), showFrames=(product==='radar'||$('show-radar').checked)&&frames.length>1;
   $('radar-controls').hidden=!showFrames;
   if(!showFrames)stopLoop();
@@ -93,7 +121,8 @@ async function startMap() {
     const {mountCommandMap,MAP_REGIONS}=await import('./command-map.js');
     if(MAP_REGIONS)$('region').innerHTML=Object.entries(MAP_REGIONS).map(([key,rec])=>option(key,rec.label||key)).join('');
     $('region').value='CONUS';
-    map=mountCommandMap($('atlas'),{onLegend:writeLegend,onDetail:writeDetail,onStatus:mapNotice});
+    map=mountCommandMap($('atlas'),{basemap:$('base-style').value,basemapControl:false,
+      onBasemapChange:key=>{$('base-style').value=key;},onLegend:writeLegend,onDetail:writeDetail,onStatus:mapNotice});
     updateMap(true);
   }catch{mapModuleFailed=true;$('map-foot').textContent='The geographic map could not be loaded. Source-linked measurements and impact details remain available below.';}
 }
@@ -108,9 +137,11 @@ function updateMap(newBoard=false) {
 function showMap(name, scroll=false) {
   if(![...$('product').options].some(o=>o.value===name))return;
   if(name!==product){stopLoop();$('map-detail').hidden=true;for(const key of [...notices.keys()])if(key!=='basemap')notices.delete(key);$('map-notice').textContent=[...notices.values()].join(' ');}
+  if(scroll)navigate('board');
   product=name;$('product').value=name;updateMap();
-  $('map-heading').textContent=({power:'Utility outages',aviation:'Air travel',ground:'Ground impacts',exposure:'Resident exposure'})[name]||'U.S. weather map';
-  if(scroll){if($('board-view').hidden)location.hash='board';$('map-stage').scrollIntoView({block:'start'});}
+  const titles={radar:'U.S. hazard map',winter:'Winter weather',mpd:'Mesoscale Precipitation Discussions',alerts:'NWS watches, warnings and advisories',observations:'Measured weather reports',outlook:'Days 3–7 hazards',power:'Utility outages',aviation:'Air travel',ground:'Ground impacts',exposure:'Resident exposure'};
+  $('map-heading').textContent=titles[name]||('Day '+name.slice(3)+' excessive rainfall');
+  if(scroll)requestAnimationFrame(()=>{$('map-stage').scrollIntoView({block:'start'});});
 }
 function showImpact(id) {
   if(!impactIDs.includes(id))return;
@@ -124,11 +155,19 @@ function showImpact(id) {
 }
 function focusReport(row) {
   const info=reportPresentation(row),located=Number.isFinite(row.latitude)&&Number.isFinite(row.longitude);
+  navigate('board');
   if(located){$('map-observation').value=row.category||'all';showMap('observations');map?.focus({...row,...info});}
   writeDetail(info);$('map-stage').scrollIntoView({block:'start'});
 }
+const kpiStrip=mountImpactStrip($('impact-strip'),(id,choice)=>{
+  if(id==='exposure' && board){
+    selectExposureFocus(board,choice);
+    renderImpactDetails();
+  }
+  showImpact(id);navigate('impacts');
+});
 const focusDesk=mountFocusDesk({
-  onChange() { showMap('radar'); map?.fitBriefing(); },
+  onChange() { kpiStrip.update(board,focusDesk.getSelection());showMap('radar');map?.fitBriefing(); },
   onScopeChange() { updateMap(); },
   onFit() {
     showMap('radar');
@@ -145,12 +184,14 @@ const focusDesk=mountFocusDesk({
   }
 });
 const settings=$('map-settings');
+function closeLayers(){settings.open=false;settings.querySelector('summary').focus({preventScroll:true});}
+$('close-layers').onclick=closeLayers;
 document.addEventListener('pointerdown',e=>{if(settings.open&&!settings.contains(e.target))settings.open=false;});
-settings.addEventListener('keydown',e=>{if(e.key==='Escape'){settings.open=false;settings.querySelector('summary').focus();}});
+settings.addEventListener('keydown',e=>{if(e.key==='Escape'){closeLayers();}});
 const reports=mountObservationDesk(focusReport);
-for(const b of document.querySelectorAll('[data-product]'))b.addEventListener('click',()=>showMap(b.dataset.product));
+for(const b of document.querySelectorAll('[data-product]'))b.addEventListener('click',()=>{showMap(b.dataset.product);closeLayers();});
 for(const b of document.querySelectorAll('[data-map-product]'))b.onclick=()=>showMap(b.dataset.mapProduct,true);
-$('product').onchange=e=>{showMap(e.target.value);settings.open=false;};
+$('product').onchange=e=>{showMap(e.target.value);closeLayers();};
 $('region').onchange=e=>map?.region(e.target.value);
 $('zoom-in').onclick=()=>map?.zoomBy(.5);$('zoom-out').onclick=()=>map?.zoomBy(-.5);
 $('map-power-level').onchange=e=>{setPowerLevel(e.target.value);if($('outage-level'))$('outage-level').value=powerLevel();updateMap();};
@@ -241,31 +282,78 @@ $('brief-form').onsubmit=e=>{e.preventDefault();if(!board)return;try{
 $('copy').onclick=async()=>{if(!board)return;renderBrief();try{await navigator.clipboard.writeText(briefText);$('copy-note').textContent='Brief and source links copied.';}catch{const range=document.createRange();range.selectNodeContents($('brief-output'));const s=getSelection();s.removeAllRanges();s.addRange(range);$('copy-note').textContent='Brief selected. Use your browser’s Copy command.';}};
 $('print').onclick=()=>{if(board){renderBrief();window.print();}};
 function route() {
-  const hash=location.hash.slice(1), view=hash==='brief'||hash==='sources'?hash:'board', nav=['impacts','observations'].includes(hash)?hash:view;
-  for(const id of ['board','brief','sources'])$(id+'-view').hidden=id!==view;
-  for(const a of document.querySelectorAll('[data-nav]')){if(a.dataset.nav===nav)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}
-  if(view==='board')requestAnimationFrame(()=>{map?.invalidateSize();if(nav==='impacts'||nav==='observations')$(nav).scrollIntoView();else if(hash!=='main')window.scrollTo({top:0});});
-  else{if(view==='brief')renderBrief();window.scrollTo({top:0});}
+  const hash=location.hash.slice(1), view=views.has(hash)?hash:hash==='issued'?'products':hash==='main'?document.querySelector('[data-view]:not([hidden])')?.dataset.view||'board':'board';
+  for(const section of document.querySelectorAll('[data-view]'))section.hidden=section.dataset.view!==view;
+  for(const a of document.querySelectorAll('[data-nav]')){
+    if(a.dataset.nav===view)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
+  }
+  settings.open=false;
+  if(view==='board')map?.invalidateSize();
+  if(view==='brief')renderBrief();
+  if(hash!=='main')window.scrollTo({top:0});
 }
+function navigate(view) {
+  if(!views.has(view))return;
+  if(location.hash!=='#'+view)history.pushState(null,'','#'+view);
+  route();
+}
+document.querySelector('nav[aria-label="Dashboard"]').addEventListener('click',event=>{
+  const link=event.target.closest('[data-nav]');
+  if(!link||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+  event.preventDefault();navigate(link.dataset.nav);
+});
 window.addEventListener('hashchange',route);
-function render() {
-  focusDesk.update(board);configureProducts();renderImpacts(board,(id,scroll)=>{showImpact(id);showMap(id,scroll);},useFootprint);showImpact(currentImpact);
-  reports.update(board.weather?.observations);updateMap(true);renderPriorities();renderMessages();renderSources();renderCatalog();chooseBrief();renderBrief();
-  const t=board.revision||board.captured_at, stale=Date.now()-Date.parse(t)>30*60000;
-  $('sync-status').textContent=(stale?'Saved collection · ':'Collection · ')+time(t);
+function renderImpactDetails(){
+  renderImpacts(board,(id,openMap)=>{showImpact(id);showMap(id,openMap);},useFootprint);
 }
+function render() {
+  $('impact-strip').setAttribute('aria-busy','false');
+  focusDesk.update(board);kpiStrip.update(board,focusDesk.getSelection());configureProducts();
+  renderImpactDetails();showImpact(currentImpact);
+  reports.update(board.weather?.observations);updateMap(true);renderPriorities();renderMessages();renderSources();renderCatalog();chooseBrief();renderBrief();
+  const t=board.recovery?.collectorRevision||board.revision||board.captured_at;
+  const stale=Date.now()-Date.parse(t)>30*60000;
+  $('sync-status').textContent=board.recovery?.collectorRevision?'Live sources checked '+time(t)+' · Full edition '+time(board.recovery.publicationRevision):(stale?'Saved edition · ':'Collection · ')+time(t);
+}
+
+function moreRecentRadar(candidate,prior){
+  if(!candidate)return prior;
+  if(!prior)return candidate;
+  const candidateTime=Date.parse(candidate.valid_time), priorTime=Date.parse(prior.valid_time);
+  if(!Number.isFinite(priorTime))return candidate;
+  if(!Number.isFinite(candidateTime))return prior;
+  return candidateTime>priorTime || (candidateTime===priorTime && Date.parse(candidate.checked_at)>Date.parse(prior.checked_at)) ?candidate:prior;
+}
+
 async function refresh(){
   if(loading)return; loading=true;$('refresh').disabled=true;
   try{
-    const snapshot=await readRelease('board');
-    board=snapshot;render();
-    const radar=await currentRadar(snapshot);
-    if(board===snapshot && radar && radar!==snapshot.weather?.radar){
-      board={...snapshot,weather:{...snapshot.weather,radar}};
-      configureProducts();updateMap(true);renderSources();
-    }
+    const saved=await readRelease('board',fetch,Date.now(),{onSaved:early=>{
+      if(!board){board=early;render();}
+    }});
+    const publication=board?.recovery?.publicationRevision||board?.revision;
+    const savedTime=Date.parse(saved.revision);
+    let active=publication && Date.parse(publication)>=savedTime && board?.recovery?board:saved;
+    let radar=moreRecentRadar(board?.weather?.radar,active.weather?.radar);
+    const paint=next=>{
+      active=next;
+      radar=moreRecentRadar(next.weather?.radar,radar);
+      board=radar && radar!==next.weather?.radar?{...next,weather:{...next.weather,radar}}:next;
+      render();
+    };
+    paint(active);
+    await Promise.allSettled([
+      currentRadar(active).then(next=>{
+        const best=moreRecentRadar(next,radar);
+        if(best && best!==radar){
+          radar=best;board={...active,weather:{...active.weather,radar}};
+          configureProducts();updateMap(true);renderSources();
+        }
+      }),
+      recoverRelease(active,{onUpdate:paint})
+    ]);
   }
-  catch{if(board){focusDesk.update(board);updateMap();$('sync-status').textContent='Refresh unavailable · Saved '+time(board.revision);}else{focusDesk.update(null);$('sync-status').textContent='Current briefing collection unavailable';reports.update(null);for(const id of ['priorities','ground-panel','exposure-panel','weather-source-rows','impact-source-rows','sources-table'])$(id).textContent='Current collection unavailable.';
+  catch{if(board){focusDesk.update(board);kpiStrip.update(board,focusDesk.getSelection());updateMap();$('sync-status').textContent='Refresh unavailable · Last collection '+time(board.revision);}else{focusDesk.update(null);kpiStrip.update(null,null);$('impact-strip').setAttribute('aria-busy','false');$('sync-status').textContent='Current briefing collection unavailable';reports.update(null);for(const id of ['priorities','ground-panel','exposure-panel','weather-source-rows','impact-source-rows','sources-table'])$(id).textContent='Current collection unavailable.';
     $('brief-output').textContent='A current collection is required to generate a source-linked briefing.';
     $('power-panel').innerHTML='<p>Current utility figures are unavailable. '+source('https://poweroutage.us/','PowerOutage.us map')+' · '+source('https://poweroutmap.com/','Power Out Map')+'</p>';
     $('aviation-panel').innerHTML='<p>Current FAA notices are unavailable. '+source('https://nasstatus.faa.gov/','FAA status')+' · '+source('https://www.flightaware.com/live/cancelled/today/US','U.S. flight delays and cancellations on FlightAware')+'</p>';if(!mapModuleFailed)$('map-foot').textContent='Current weather layers unavailable.';}}
@@ -275,4 +363,7 @@ async function loadShift(){try{handoff=await readRelease('handoff');if(board)ren
 function clock(){$('clock').textContent=new Intl.DateTimeFormat('en-GB',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date())+' UTC';}
 $('refresh').onclick=()=>{refresh();loadShift();};clock();setInterval(clock,15000);
 setInterval(()=>{if(!document.hidden){refresh();loadShift();}},120000);document.addEventListener('visibilitychange',()=>{if(document.hidden)stopLoop();else refresh();});
+kpiStrip.update(null,null);
+for(const node of $('impact-strip').querySelectorAll('.kpi-context'))node.textContent='Loading source data…';
+for(const node of $('impact-strip').querySelectorAll('.kpi-time'))node.textContent='';
 showImpact(currentImpact);route();startMap();refresh();loadShift();

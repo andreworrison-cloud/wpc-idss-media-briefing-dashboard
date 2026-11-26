@@ -138,7 +138,15 @@ def check_radar(manifest, rev, now):
     }
 
 
-def collect_mrms(now, fetch):
+def verified_image(radar, image, radar_images):
+    digest = hashlib.sha256(image).hexdigest()
+    radar["image_sha256"] = digest
+    if radar_images is not None:
+        radar_images[(radar["valid_time"], radar["image_url"], digest)] = image
+    return radar
+
+
+def collect_mrms(now, fetch, radar_images=None):
     # Read the branch head once. Both the manifest and every PNG then identify
     # the same Git snapshot even if Hydro publishes during this collection.
     source_url = RADAR_ROOT + BRANCH + "/" + MANIFEST
@@ -155,7 +163,7 @@ def collect_mrms(now, fetch):
             require(len(image) >= 57 and image[:16] == bytes.fromhex("89504e470d0a1a0a0000000d49484452")
                     and list(struct.unpack(">II", image[16:24])) == radar["image_dimensions"]
                     and image[-12:] == bytes.fromhex("0000000049454e44ae426082"), "Invalid or incomplete radar PNG")
-            radar["image_sha256"] = hashlib.sha256(image).hexdigest()
+            verified_image(radar, image, radar_images)
         return radar
     except Exception as exc:
         return {"status":"unavailable","reason":str(exc)[:180],"label":"MRMS lowest-altitude reflectivity",
@@ -212,7 +220,7 @@ def nonblank_wms_png(raw, dimensions):
             "WMS returned an empty transparent frame")
 
 
-def collect_iem(now, fetch):
+def collect_iem(now, fetch, radar_images=None):
     valid_dates=sorted({(now-20*MINUTE).date(),now.date()},reverse=True)
     candidates={}
     for day in valid_dates:
@@ -235,24 +243,25 @@ def collect_iem(now, fetch):
             continue
         colors=("#9098b4","#6376a8","#4568a6","#60b4d4","#43d67e","#0eb314","#0b840e","#327308",
                 "#ffe200","#ffac00","#f80000","#aa0000","#ffeaff","#f960fa","#a400f7","#05eaf0","#04adb0")
-        return {"status":"current","reason":"Dated IEM archive and a matching nonempty WMS frame verified.",
+        radar = {"status":"current","reason":"Dated IEM archive and a matching nonempty WMS frame verified.",
                 "label":"NEXRAD base reflectivity","provider":"Iowa Environmental Mesonet (IEM)",
                 "domain":"CONUS","units":"dBZ","checked_at":iso(now),"valid_time":iso(valid),
                 "fresh_until":iso(valid+20*MINUTE), "freshness_minutes":20, "cadence_minutes":5,
                 "projection":"EPSG:3857","bounds":IEM_BOUNDS,"image_dimensions":dimensions,
                 "image_url":image_url,"source_url":IEM_DOC,"source_data_url":candidates[valid],
-                "dashboard_url":HYDRO,"image_sha256":hashlib.sha256(raw).hexdigest(),
+                "dashboard_url":HYDRO,
                 "color_table":[{"threshold_dbz":i*5,"color":c} for i,c in enumerate(colors)],
                 "frames":[{"valid_time":iso(t),"image_url":iem_image_url(t)[0]} for t in sorted(candidates) if t<=valid]}
+        return verified_image(radar, raw, radar_images)
     raise ValueError("No verified nonempty IEM national WMS frame within 20 minutes")
 
 
-def collect_radar(now,fetch):
-    primary=collect_mrms(now,fetch)
+def collect_radar(now,fetch,radar_images=None):
+    primary=collect_mrms(now,fetch,radar_images)
     if primary["status"]=="current":
         return primary
     try:
-        observed=collect_iem(now,fetch)
+        observed=collect_iem(now,fetch,radar_images)
         observed["primary"]={k:primary.get(k) for k in ("status","valid_time","source_url","reason")}
         return observed
     except Exception as exc:
@@ -633,11 +642,11 @@ def collect_mpds(now, fetch):
             "latest_official_distribution":iso(recent[0][0]) if recent else None}
 
 
-def collect(now=None, *, fetch=read_public):
+def collect(now=None, *, fetch=read_public, radar_images=None):
     """Return renderable, independently checked radar and MPD modules."""
     now=check_now(now)
     with cf.ThreadPoolExecutor(max_workers=2) as pool:
-        radar=pool.submit(collect_radar,now,fetch)
+        radar=pool.submit(collect_radar,now,fetch,radar_images)
         mpd=pool.submit(collect_mpds,now,fetch)
         return {"radar":radar.result(),"mpd":mpd.result()}
 

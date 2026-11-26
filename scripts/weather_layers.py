@@ -1,17 +1,18 @@
 """Collect the public geographic layers independently at the IDSS publishing site."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from functools import partial
 
 import hydro_layers
 import report_layers
 import winter_layers
 
 
-def collect_weather(board, review, now=None):
+def collect_weather(board, review, now=None, *, radar_images=None):
     now = now or datetime.now(timezone.utc)
     stamp = now.isoformat(timespec='seconds').replace('+00:00', 'Z')
     definitions = {
-        'hydro': (hydro_layers.collect, (now,), ('radar', 'mpd')),
+        'hydro': (partial(hydro_layers.collect, radar_images=radar_images), (now,), ('radar', 'mpd')),
         'winter': (winter_layers.collect, (now,), ('winter',)),
         'observations': (report_layers.collect, (now, board), ('observations',)),
     }

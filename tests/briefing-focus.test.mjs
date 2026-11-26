@@ -132,7 +132,9 @@ test('flags incomplete zone geometry, unlocated or truncated measurements, and r
   e=briefingFocus(b,'',now).evidence;
   assert.equal(e.localCount,null);
   assert.match(e.note,/could not be placed/);
-  obs.unlocated=[];obs.counts={availableLocated:28,located:1};
+  obs.unlocated=[];obs.counts={availableLocated:28,located:28};
+  assert.equal(briefingFocus(b,'',now).evidence.localCount,null);
+  obs.counts={truncated:true};
   assert.equal(briefingFocus(b,'',now).evidence.localCount,null);
   obs.asOf=at(-90);e=briefingFocus(b,'',now).evidence;
   assert.equal(e.status,'unavailable');assert.deepEqual(e.national,[]);assert.equal(e.localCount,null);

@@ -52,6 +52,13 @@ function statesWithResidents(choice) {
 }
 function focusHeadline(choice, nameFor) {
   if (!choice) return '';
+  if (choice.kind==='mpd') {
+    const concern=choice.features?.[0]?.properties?.tag;
+    if (typeof concern==='string') {
+      const parts=concern.split(/\.{2,}/).map(p=>p.trim()).filter(Boolean);
+      if (parts.length) return parts.find(p=>/flash flooding/i.test(p)) || parts.join(' · ');
+    }
+  }
   const codes = Array.isArray(choice.footprintStates) ? [...new Set(choice.footprintStates)] : [];
   if (!codes.length || choice.geometryComplete === false || choice.kind !== 'alert') return choice.label;
   if (codes.length <= 3) {
@@ -92,11 +99,6 @@ export function mountFocusDesk({onChange, onScopeChange, onLocate, onFit}) {
       holder.append(item('p','Population estimate unavailable for this footprint.','focus-missing'));
       return;
     }
-    const value = item('strong', compact.format(choice.population), 'focus-number');
-    value.title = numbers.format(choice.population)+' estimated residents';
-    value.setAttribute('aria-label', value.title);
-    const description = item('span', 'Estimated residents inside the '+areaLabel(choice), 'focus-unit');
-    holder.append(value,description);
     if (choice.geometryComplete === false) holder.append(item('small','Some boundaries for this estimate are missing from the map.','coverage-note'));
     const all = statesWithResidents(choice);
     if (!all.length || choice.population <= 0) return;
@@ -170,6 +172,10 @@ export function mountFocusDesk({onChange, onScopeChange, onLocate, onFit}) {
     const c = model?.selected;
     const h = byId('focus-headline');
     h.textContent = focusHeadline(c, nameFor) || (model?.status === 'none' ? 'No active hazard in the monitored briefing products' : 'Current hazard briefing unavailable');
+    const area=byId('focus-area');
+    const issuedArea=c?.kind==='mpd' ? c.features?.[0]?.properties?.areas : null;
+    area.textContent=typeof issuedArea==='string' ? issuedArea.replace(/\.{2,}/g,', ').replace(/\s+/g,' ').trim() : '';
+    area.hidden=!area.textContent;
     const accent = /^#[0-9a-f]{6}$/i.test(c?.color || '') ? c.color : '#4682b4';
     byId('weather-spread').style.setProperty('--focus-hazard',accent);
     renderPopulation(c);
@@ -234,6 +240,7 @@ export function mountFocusDesk({onChange, onScopeChange, onLocate, onFit}) {
     } else {
       sentence = 'An estimated '+estimate(c.population)+' residents live in the area covered by '+c.label+where+'.';
     }
+    if (c.kind==='mpd' && c.features?.[0]?.properties?.tag) sentence+= ' '+c.features[0].properties.tag.replace(/\.{2,}/g,' · ').replace(/[.!]+$/,'')+'.';
     if (model.evidence?.local?.length) {
       const r=model.evidence.local[0], period=reportPeriod(r);
       const type=(r.label || r.phenomenon || 'weather measurement').toLowerCase();
@@ -262,6 +269,7 @@ export function mountFocusDesk({onChange, onScopeChange, onLocate, onFit}) {
 
   return {
     update,
+    getSelection() { return model?.selected || null; },
     mapContext() {
       const c=model?.selected;
       if (!c?.features?.length) return null;
