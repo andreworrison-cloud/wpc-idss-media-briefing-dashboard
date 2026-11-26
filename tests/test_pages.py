@@ -6,7 +6,7 @@ import re
 import unittest
 from urllib.parse import urljoin, urlsplit
 
-from scripts.publish import ASSETS, GENERATED_CENTER_INDEX, SOURCES, qualify, stamp
+from scripts.publish import ASSETS, GENERATED_CENTER_INDEX, SOURCES, qualify, recover_public_aviation, stamp
 
 ROOT = Path(__file__).resolve().parents[1]
 WHEN = '2026-11-24T21:51:51.965Z'
@@ -22,6 +22,25 @@ def snapshot():
 
 
 class PagesTests(unittest.TestCase):
+    def test_airport_recovery_keeps_source_time_month_and_valid_notices(self):
+        primary = {'status': 'unavailable', 'monthly_context': {'period': '2026-09'}}
+        event = {'airport': 'DCA', 'kind': 'ground_stop', 'label': 'Ground stop',
+                 'end_utc': '2026-11-24T21:45:00Z', 'source_url': 'https://nasstatus.faa.gov/'}
+        packet = {'schema': 1, 'checked_at': WHEN, 'aviation': {
+            'status': 'ok', 'as_of': '2026-11-24T21:46:00Z',
+            'events': [event, {**event, 'airport': 'LAX', 'kind': 'arrival_delay'}]}}
+        result = recover_public_aviation(primary, stamp(WHEN), lambda route: packet)
+        self.assertEqual(result['airports'], ['DCA'])
+        self.assertEqual(result['as_of'], packet['aviation']['as_of'])
+        self.assertEqual(result['monthly_context'], primary['monthly_context'])
+        self.assertEqual(recover_public_aviation(result, stamp(WHEN), lambda route: self.fail(route)), result)
+        for field, value in [('as_of', '2026-11-24T20:00:00Z'), ('as_of', '2026-11-25T00:00:00Z'),
+                             ('events', None), ('events', [{**event, 'source_url': 'https://example.com'}])]:
+            with self.subTest(field=field, value=value):
+                invalid = copy.deepcopy(packet)
+                invalid['aviation'][field] = value
+                self.assertIs(recover_public_aviation(primary, stamp(WHEN), lambda route: invalid), primary)
+
     def test_current_snapshot_and_explicit_partial_coverage_are_retained(self):
         status, board, handoff = snapshot()
         board['health']['winter']['status'] = 'partial'
