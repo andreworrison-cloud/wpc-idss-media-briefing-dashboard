@@ -7,6 +7,7 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from http.client import HTTPException
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import urlsplit
@@ -129,6 +130,57 @@ def qualify(status, board, handoff, now):
     return public_board, public_handoff
 
 
+def recover_public_aviation(primary, now, reader=read_public):
+    """Use the independent IDSS airport reading only while its original FAA time is current."""
+    if primary.get('status') in {'ok', 'current', 'partial'}:
+        return primary
+    try:
+        packet = reader('impact-now')
+        if packet['schema'] != 1 or not -120 <= (now - stamp(packet['checked_at'])).total_seconds() <= 1500:
+            return primary
+        backup = packet['aviation']
+        as_of = stamp(backup['as_of'])
+        if backup['status'] not in {'ok', 'current', 'partial'} or not -120 <= (now - as_of).total_seconds() <= 1800:
+            return primary
+        if primary.get('as_of') and stamp(primary['as_of']) > as_of:
+            return primary
+        event_fields = {
+            'airport', 'airport_name', 'city', 'state', 'icao', 'flight_counts_url', 'lat', 'lon',
+            'kind', 'label', 'scope', 'reason', 'delay', 'phase', 'time_basis', 'start_utc',
+            'end_utc', 'updated_utc', 'end_label', 'source_url',
+        }
+        kinds = {'ground_stop', 'ground_delay', 'arrival_delay', 'departure_delay',
+                 'airport_closure', 'deicing', 'airport_restriction'}
+        groups = {}
+        for key in ('events', 'scheduled_events'):
+            rows = backup['events'] if key == 'events' else backup.get(key, [])
+            if not isinstance(rows, list):
+                return primary
+            groups[key] = []
+            for row in rows:
+                if not isinstance(row, dict) or not re.fullmatch(r'[A-Z0-9]{3,4}', row.get('airport') or ''):
+                    return primary
+                if row.get('kind') not in kinds or not isinstance(row.get('label'), str):
+                    return primary
+                event = {k: v for k, v in row.items() if k in event_fields}
+                review_fields(event, IMPACT_HOSTS)
+                start = stamp(event['start_utc']) if event.get('start_utc') else None
+                end = stamp(event['end_utc']) if event.get('end_utc') else None
+                if key == 'events' and ((start and start > now) or (end and end <= now and event['kind'] != 'ground_stop')):
+                    continue
+                groups[key].append(event)
+        if backup['status'] == 'partial' and not groups['events']:
+            return primary
+        airports = sorted({row['airport'] for row in groups['events']})
+        return {**primary, **groups, 'status': backup['status'], 'as_of': backup['as_of'],
+                'as_of_basis': 'FAA reading from the IDSS impact collector',
+                'airports': airports, 'affected_airports': len(airports), 'event_count': len(groups['events']),
+                'source_label': 'FAA National Airspace System Status', 'source_url': 'https://nasstatus.faa.gov/',
+                'detail': 'Airport notices from the independently collected FAA reading.'}
+    except (KeyError, TypeError, ValueError, OSError, HTTPException):
+        return primary
+
+
 def snapshots():
     for attempt in range(3):
         try:
@@ -172,6 +224,7 @@ def publish():
         layers = pool.submit(collect_weather, board, lambda data: review_fields(data, WEATHER_HOSTS, hydro=True), now, radar_images=radar_images)
         board['impacts'] = impacts.result()
         board['weather'] = layers.result()
+    board['impacts']['aviation'] = recover_public_aviation(board['impacts']['aviation'], datetime.now(timezone.utc))
     add_weather_exposure(board, datetime.now(timezone.utc))
     # Publish only the explicitly listed viewer files and approved snapshot documents.
     # Actions uploads the completed directory only after this script exits successfully.
