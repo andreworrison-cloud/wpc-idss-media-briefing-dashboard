@@ -2,6 +2,7 @@ import {activeAirEvents, currentGroundReports, currentRivers, freshImpact, recen
 import {gaugeTally} from './impact-strip.js';
 import {outageBand, OUTAGE_LEGEND, sectionStatus} from './outage-layer.js';
 import {availableRows, timeBins} from './observed-graphics.js';
+import {safeURL} from './logic.js';
 import {inkFor} from './hazard-palette.js';
 import {mountForecastPreviews} from './forecast-previews.js';
 
@@ -190,7 +191,8 @@ function groundBoard(el,reports,now){
     const types=impactTypes.filter(([k])=>r.categories?.includes(k)).map(([,l])=>l);
     line.append(title,node('span','',[types.join(' · '),r.hazard].filter(Boolean).join(' · ')));
     const source=node('a','',stamp(r.observedAt)+(r.office?' · '+r.office:''));
-    if(/^https:\/\/mesonet\.agron\.iastate\.edu\/p\//.test(r.url||'')){source.href=r.url;source.target='_blank';source.rel='noopener noreferrer';}
+    const url=safeURL(r.url);
+    if(url){source.href=url;source.target='_blank';source.rel='noopener noreferrer';source.title='Read the NWS bulletin for '+place;}
     line.append(source);el.append(line);
   }
   el.append(sourceLine([partial?'Partial report inventory':'One report can describe several impacts',stamp(reports.asOf)].filter(Boolean).join(' · ')));
