@@ -1,4 +1,4 @@
-import {activeAirEvents, currentRivers, freshImpact, recent} from './impact-logic.js';
+import {activeAirEvents, currentGroundReports, currentRivers, freshImpact, recent} from './impact-logic.js';
 import {gaugeTally} from './impact-strip.js';
 import {outageBand, OUTAGE_LEGEND, sectionStatus} from './outage-layer.js';
 import {availableRows, timeBins} from './observed-graphics.js';
@@ -167,6 +167,34 @@ function riverBoard(el,river,now){
   }
   el.append(sourceLine(['NOAA NWPS',g.minimum?'Partial gauge inventory':'Gauges at or above flood stage',stamp(river?.asOf)].filter(Boolean).join(' · ')));
 }
+const impactTypes=[['roadClosure','Road closures'],['strandedVehicle','Stranded vehicles'],['rescue','Rescues'],['structuralDamage','Structural damage']];
+function groundBoard(el,reports,now){
+  el.replaceChildren();
+  if(!freshImpact(reports,now,60)){el.append(muted('Current NWS ground-impact reports unavailable.'));return;}
+  const partial=reports.status==='partial', counts=partial?reports.availableCounts:reports.counts;
+  const heading=node('p','ground-window','Preliminary NWS reports · Past '+reports.periodHours+' hours');
+  const figures=node('div','ground-figures');
+  for(const [key,label] of impactTypes){
+    const cell=node('div'), n=counts?.[key];
+    const value=validCount(n)&&(!partial||n>0)?(partial?'≥ ':'')+number.format(n):'—';
+    cell.append(node('strong','',value),node('span','',label));
+    cell.title=validCount(n)&&(!partial||n>0)?number.format(n)+' available reports mentioning '+label.toLowerCase():'Complete count unavailable';
+    figures.append(cell);
+  }
+  el.append(heading,figures);
+  const latest=currentGroundReports(reports,now).slice().sort((a,b)=>Date.parse(b.observedAt)-Date.parse(a.observedAt)).slice(0,2);
+  for(const r of latest){
+    const line=node('div','ground-report');
+    const place=[r.location,r.location===r.state?'':r.state].filter(Boolean).join(', ');
+    const title=node('strong','',place);
+    const types=impactTypes.filter(([k])=>r.categories?.includes(k)).map(([,l])=>l);
+    line.append(title,node('span','',[types.join(' · '),r.hazard].filter(Boolean).join(' · ')));
+    const source=node('a','',stamp(r.observedAt)+(r.office?' · '+r.office:''));
+    if(/^https:\/\/mesonet\.agron\.iastate\.edu\/p\//.test(r.url||'')){source.href=r.url;source.target='_blank';source.rel='noopener noreferrer';}
+    line.append(source);el.append(line);
+  }
+  el.append(sourceLine([partial?'Partial report inventory':'One report can describe several impacts',stamp(reports.asOf)].filter(Boolean).join(' · ')));
+}
 function reportHistogram(el,obs,now){
   el.replaceChildren();const end=Date.parse(obs?.asOf||obs?.checkedAt);
   if(!recent(obs?.asOf||obs?.checkedAt,now,75)||!['current','ok','partial','none'].includes(obs?.status)){
@@ -174,7 +202,7 @@ function reportHistogram(el,obs,now){
   }
   const bins=timeBins(availableRows(obs,now),end,48), totals=bins.reduce((t,b)=>[t[0]+b.LSR,t[1]+b.PNS],[0,0]);
   const top=Math.max(1,...bins.map(b=>b.LSR+b.PNS));const label=node('div','pulse-label');
-  label.append(node('h4','','National reports · past 48 h'),node('span','lsr-label',number.format(totals[0])+' LSR'),node('span','pns-label',number.format(totals[1])+' PNS'));
+  label.append(node('h4','','Available U.S. reports · past 48 h'),node('span','lsr-label',number.format(totals[0])+' LSR'),node('span','pns-label',number.format(totals[1])+' PNS'));
   const bars=node('div','pulse-bars');
   for(const b of bins){
     const cell=node('div','pulse-bin');cell.title=dateTime.format(b.start)+'–'+clock.format(b.end)+' UTC · '+b.LSR+' LSR · '+b.PNS+' PNS';cell.setAttribute('aria-label',cell.title);
@@ -196,6 +224,7 @@ export function mountOverview(onForecast){
   return {updateFocus,refreshTheme:previews.redraw,update(board,choice,now=Date.now()){
     power(board?.impacts?.power,now);airBoard(byId('overview-air'),board?.impacts?.aviation,now);
     riverBoard(byId('overview-rivers'),board?.impacts?.ground?.rivers,now);
+    groundBoard(byId('overview-ground'),board?.impacts?.ground?.reports,now);
     reportHistogram(byId('overview-report-time'),board?.weather?.observations,now);updateFocus(choice);previews.update(board,now);
   }};
 }

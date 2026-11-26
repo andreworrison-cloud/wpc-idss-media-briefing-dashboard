@@ -77,6 +77,7 @@ def check(url):
             assert on_screen('#focus-glance'), 'Selected measurement on the opening desktop'
         wait("document.querySelectorAll('.forecast-preview canvas[data-drawn=true]').length===3", 'Three plotted WPC forecast maps')
         assert js("return document.querySelectorAll('#overview-power [data-code]').length===56 && document.querySelectorAll('.quick-products [data-product]').length===7")
+        assert js("return document.querySelectorAll('#overview-ground .ground-figures>div').length===4 || document.querySelector('#overview-ground').textContent.includes('unavailable')")
         snap('overview-opening')
         js("document.querySelector('.state-tile[data-code=VA]').click()")
         wait("document.querySelector('.state-readout').textContent.includes('Virginia')", 'Accessible state outage readout')
