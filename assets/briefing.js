@@ -1,4 +1,5 @@
 import {readRelease,recoverRelease} from './release.js';
+import {mountOverview} from './overview.js';
 import {mountImpactStrip} from './impact-strip.js';
 import {mountFocusDesk} from './focus-desk.js';
 import {currentRadar} from './browser-radar.js';
@@ -33,6 +34,7 @@ let board=null, handoff=null, map=null, mapModuleFailed=false, product='radar', 
 let scope=blankScope(), briefText='', catalogPage=0, catalogRows=[], legend=null, loop=null, frame=null, frameStamp=null;
 const notices=new Map();
 const views = new Set([...document.querySelectorAll('[data-view]')].map(el=>el.dataset.view));
+let visualOverview=null;
 let appearance=document.documentElement.dataset.theme==='light'?'light':'dark';
 function applyAppearance(theme,persist=false) {
   appearance=theme;
@@ -46,7 +48,7 @@ function applyAppearance(theme,persist=false) {
   button.title='Switch to '+target+' mode';
   document.querySelector('meta[name="theme-color"]').content=theme==='dark'?'#0b1521':'#f3f4f1';
   $('base-style').value=theme;
-  map?.setBasemap(theme);
+  map?.setBasemap(theme);visualOverview?.refreshTheme();
   if(persist){try{localStorage.setItem('wpc-idss-appearance',theme);}catch{}}
 }
 $('theme-toggle').onclick=()=>applyAppearance(appearance==='dark'?'light':'dark',true);
@@ -167,7 +169,7 @@ const kpiStrip=mountImpactStrip($('impact-strip'),(id,choice)=>{
   showImpact(id);navigate('impacts');
 });
 const focusDesk=mountFocusDesk({
-  onChange() { kpiStrip.update(board,focusDesk.getSelection());showMap('radar');map?.fitBriefing(); },
+  onChange() { visualOverview?.updateFocus(focusDesk.getSelection());kpiStrip.update(board,focusDesk.getSelection());showMap('radar');map?.fitBriefing(); },
   onScopeChange() { updateMap(); },
   onFit() {
     showMap('radar');
@@ -183,13 +185,23 @@ const focusDesk=mountFocusDesk({
     $('map-stage').scrollIntoView({block:'nearest'});
   }
 });
+visualOverview=mountOverview((id,region)=>{
+  if(id==='winter'&&[...$('winter-layer').options].some(o=>o.value==='wssi_d1'))$('winter-layer').value='wssi_d1';
+  showMap(id,true);
+  if([...$('region').options].some(o=>o.value===region)){$('region').value=region;map?.region(region);}
+});
+$('overview-exposure-map').onclick=()=>{
+  const selection=focusDesk.getSelection();
+  if(!board||!selection)return;
+  selectExposureFocus(board,selection);renderImpactDetails();showMap('exposure',true);
+};
 const settings=$('map-settings');
 function closeLayers(){settings.open=false;settings.querySelector('summary').focus({preventScroll:true});}
 $('close-layers').onclick=closeLayers;
 document.addEventListener('pointerdown',e=>{if(settings.open&&!settings.contains(e.target))settings.open=false;});
 settings.addEventListener('keydown',e=>{if(e.key==='Escape'){closeLayers();}});
 const reports=mountObservationDesk(focusReport);
-for(const b of document.querySelectorAll('[data-product]'))b.addEventListener('click',()=>{showMap(b.dataset.product);closeLayers();});
+for(const b of document.querySelectorAll('[data-product]'))b.addEventListener('click',()=>{showMap(b.dataset.product);settings.open=false;});
 for(const b of document.querySelectorAll('[data-map-product]'))b.onclick=()=>showMap(b.dataset.mapProduct,true);
 $('product').onchange=e=>{showMap(e.target.value);closeLayers();};
 $('region').onchange=e=>map?.region(e.target.value);
@@ -308,7 +320,7 @@ function renderImpactDetails(){
 }
 function render() {
   $('impact-strip').setAttribute('aria-busy','false');
-  focusDesk.update(board);kpiStrip.update(board,focusDesk.getSelection());configureProducts();
+  focusDesk.update(board);kpiStrip.update(board,focusDesk.getSelection());visualOverview.update(board,focusDesk.getSelection());configureProducts();
   renderImpactDetails();showImpact(currentImpact);
   reports.update(board.weather?.observations);updateMap(true);renderPriorities();renderMessages();renderSources();renderCatalog();chooseBrief();renderBrief();
   const t=board.recovery?.collectorRevision||board.revision||board.captured_at;
@@ -353,7 +365,7 @@ async function refresh(){
       recoverRelease(active,{onUpdate:paint})
     ]);
   }
-  catch{if(board){focusDesk.update(board);kpiStrip.update(board,focusDesk.getSelection());updateMap();$('sync-status').textContent='Refresh unavailable · Last collection '+time(board.revision);}else{focusDesk.update(null);kpiStrip.update(null,null);$('impact-strip').setAttribute('aria-busy','false');$('sync-status').textContent='Current briefing collection unavailable';reports.update(null);for(const id of ['priorities','ground-panel','exposure-panel','weather-source-rows','impact-source-rows','sources-table'])$(id).textContent='Current collection unavailable.';
+  catch{if(board){focusDesk.update(board);kpiStrip.update(board,focusDesk.getSelection());visualOverview.update(board,focusDesk.getSelection());updateMap();$('sync-status').textContent='Refresh unavailable · Last collection '+time(board.revision);}else{focusDesk.update(null);kpiStrip.update(null,null);visualOverview.update(null,null);$('impact-strip').setAttribute('aria-busy','false');$('sync-status').textContent='Current briefing collection unavailable';reports.update(null);for(const id of ['priorities','ground-panel','exposure-panel','weather-source-rows','impact-source-rows','sources-table'])$(id).textContent='Current collection unavailable.';
     $('brief-output').textContent='A current collection is required to generate a source-linked briefing.';
     $('power-panel').innerHTML='<p>Current utility figures are unavailable. '+source('https://poweroutage.us/','PowerOutage.us map')+' · '+source('https://poweroutmap.com/','Power Out Map')+'</p>';
     $('aviation-panel').innerHTML='<p>Current FAA notices are unavailable. '+source('https://nasstatus.faa.gov/','FAA status')+' · '+source('https://www.flightaware.com/live/cancelled/today/US','U.S. flight delays and cancellations on FlightAware')+'</p>';if(!mapModuleFailed)$('map-foot').textContent='Current weather layers unavailable.';}}

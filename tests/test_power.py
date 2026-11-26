@@ -75,6 +75,26 @@ class ElectricityTests(unittest.TestCase):
         self.assertIn({"label": "Power Out Map", "url": "https://poweroutmap.com/"}, r["links"])
         json.dumps(r, allow_nan=False)
 
+    def test_national_history_preserves_gaps_and_zero(self):
+        data = feeds()
+        data["/outages/history"] = packet({
+            "start": "2026-11-24T21:45:00Z", "step_minutes": 15,
+            "customers_out": [19, None, -3, 0, 9],
+        })
+        result = collect(data)
+        self.assertEqual(result["history"]["counts"], [19, None, None, 0, 9])
+        self.assertEqual(result["history"]["status"], "current")
+        self.assertEqual(result["history"]["as_of"], STAMP)
+        for key, replacement in [("start", "2026-11-23T20:00:00Z"), ("step_minutes", 30), ("start", "n/a")]:
+            with self.subTest(key=key, replacement=replacement):
+                broken = copy.deepcopy(data)
+                broken["/outages/history"]["data"][key] = replacement
+                failed = collect(broken)
+                self.assertEqual(failed["history"]["status"], "unavailable")
+                self.assertEqual(failed["customers_out"], 9)
+        data["/outages/history"]["meta"]["updated"] = OLD
+        self.assertEqual(collect(data)["history"]["status"], "stale")
+
     def test_zero_only_with_reported_coverage(self):
         r = collect(feeds())
         states = {state["state"]: state for state in r["states"]}

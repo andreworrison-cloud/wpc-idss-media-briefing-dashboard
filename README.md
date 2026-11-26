@@ -2,7 +2,7 @@
 
 [Open the map](https://andreworrison-cloud.github.io/wpc-idss-media-briefing-dashboard/) · [Prepare a media brief](https://andreworrison-cloud.github.io/wpc-idss-media-briefing-dashboard/#brief) · [Inspect source status](https://andreworrison-cloud.github.io/wpc-idss-media-briefing-dashboard/#sources)
 
-The map opens on dated radar reflectivity. Select a forecast, measured report, or infrastructure product in the map controls. The observation index filters by hazard, state, issuing office or place, source and observation window. The observation-time chart compares LSR and PNS counts. Select an interval to narrow the list. Selected resident footprints can be carried into a state-scoped, printable media brief with numbered evidence links. All times are UTC.
+The Overview opens on dated radar reflectivity alongside a state outage map, 15-minute national outage history, FAA airport notices, river stages, and the selected hazard’s resident estimate. Three plotted WPC previews open Day 1 excessive rainfall, Day 1 winter impacts, and active MPDs on the main map. Select a forecast, measured report, or infrastructure product in the map controls. The observation index filters by hazard, state, issuing office or place, source and observation window. The observation-time chart compares LSR and PNS counts. Select an interval to narrow the list. Selected resident footprints can be carried into a state-scoped, printable media brief with numbered evidence links. All times are UTC.
 
 | View | Source and interpretation |
 | --- | --- |

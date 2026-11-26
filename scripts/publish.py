@@ -33,7 +33,7 @@ ASSETS = (
     'briefing-focus.js', 'briefing-relief.webp', 'focus-desk.css', 'focus-desk.js',
     'spectral-license.txt', 'spectral-semibold.woff2', 'impact-strip.js', 'briefing-light-relief.webp',
     'active-alert-shapes.js', 'browser-recovery.js', 'recovery-observations.js', 'recovery-hazards.js',
-    'recovery-population.js', 'report-evidence.js',
+    'recovery-population.js', 'report-evidence.js', 'overview.js', 'overview.css', 'forecast-previews.js',
 )
 
 GENERATED_CENTER_INDEX = 'recovery-centers.bin.gz'
