@@ -475,6 +475,13 @@ export function mountCommandMap(container,options={}) {
       powerSignature=null;setPower(isPower(state.product),state.power||state.board?.impacts?.power);
     }).catch(()=>{powerImport=null;emitStatus({layer:'power',status:'unavailable',message:'Outage geography could not be loaded.'});});
   }
+  async function focusOutage(query, opts={popup:true}) {
+    const selection=selectionEpoch;
+    const isCurrent=()=>!dead&&isPower(state.product)&&selection===selectionEpoch;
+    if(!isCurrent())return false;
+    if(!powerLayer)await powerImport;
+    return isCurrent()&&powerLayer ? powerLayer.focus(query,{...opts,isCurrent}) : false;
+  }
   async function drawCounties() {
     const ticket=++countyEpoch;
     if(!state.layers.counties||isPower(state.product)){
@@ -590,7 +597,7 @@ export function mountCommandMap(container,options={}) {
   map.on('popupopen',()=>clearTimeout(pointTimer));
   map.on('moveend zoomend',viewChanged);
   const resize=typeof ResizeObserver!=='undefined'?new ResizeObserver(()=>{if(!dead)map.invalidateSize({pan:false,debounceMoveend:true});}):null;resize?.observe(container);
-  return {map,update,region,focus,fitBriefing,setBasemap:base.setStyle,focusOutage:(query,opts={popup:true})=>powerLayer?.focus(query,opts)??false,zoomBy:n=>map.setZoom(map.getZoom()+Number(n||0)),invalidateSize:()=>map.invalidateSize({pan:false}),
+  return {map,update,region,focus,fitBriefing,setBasemap:base.setStyle,focusOutage,zoomBy:n=>map.setZoom(map.getZoom()+Number(n||0)),invalidateSize:()=>map.invalidateSize({pan:false}),
     get legend(){return lastLegend;},get radar(){return radarInfo;},get impactOverlay(){return powerLayer;},
     destroy(){dead=true;selectionEpoch++;clearTimeout(pointTimer);resize?.disconnect();map.off('moveend zoomend',viewChanged);powerLayer?.destroy();base.destroy();map.remove();}
   };

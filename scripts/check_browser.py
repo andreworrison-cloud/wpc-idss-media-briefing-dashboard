@@ -51,12 +51,11 @@ def check(url):
             wait(f"!document.querySelector('#{name}-view').hidden && document.querySelectorAll('[data-view]:not([hidden])').length===1",name+' view')
         def click_product(name):
             if js("return document.querySelector('#board-view').hidden"): view('board')
-            if js("return !document.querySelector('#map-settings').open"):
-                js("document.querySelector('#map-settings summary').click()")
-            wait("document.querySelector('#map-settings').open",'Map layer drawer opens')
-            if js(f"return !!document.querySelector('[data-product={name}]')"):
-                js(f"document.querySelector('[data-product={name}]').click()")
+            if js(f"return !!document.querySelector('.quick-products [data-product={name}]')"):
+                js(f"document.querySelector('.quick-products [data-product={name}]').click()")
             else:
+                if js("return !document.querySelector('#map-settings').open"):
+                    js("document.querySelector('#map-settings summary').click()")
                 select('product',name)
             wait(f"document.querySelector('#product').value==='{name}'", name+' choice')
         api(prefix+'/url', {'url':url})
@@ -73,7 +72,26 @@ def check(url):
         wait("document.querySelector('#focus-headline') && !document.querySelector('#focus-headline').textContent.startsWith('Loading')", 'Opening briefing resolves')
         def on_screen(selector):
             return js(f"const r=document.querySelector({json.dumps(selector)}).getBoundingClientRect(); return r.width>0 && r.top>=0 && r.top+30<innerHeight")
-        assert on_screen('#atlas') and on_screen('#focus-headline') and on_screen('#focus-evidence-title'), 'Map, briefing and observations should be visible together'
+        assert all(on_screen(s) for s in ['#atlas','#focus-headline','#outage-heading','#air-heading','.quick-products','#forecast-previews']), 'Map, current impacts and map product controls share the first screen'
+        if js("return !!document.querySelector('#focus-glance').textContent"):
+            assert on_screen('#focus-glance'), 'Selected measurement on the opening desktop'
+        wait("document.querySelectorAll('.forecast-preview canvas[data-drawn=true]').length===3", 'Three plotted WPC forecast maps')
+        assert js("return document.querySelectorAll('#overview-power [data-code]').length===56 && document.querySelectorAll('.quick-products [data-product]').length===7")
+        assert js("return document.querySelectorAll('#overview-ground .ground-figures>div').length===4 || document.querySelector('#overview-ground').textContent.includes('unavailable')")
+        assert js("return [...document.querySelectorAll('#overview-ground .ground-report')].every(row=>row.querySelector('a[href^=https]'))"), 'Reported ground impacts link to their NWS bulletin'
+        snap('overview-opening')
+        js("document.querySelector('.state-tile[data-code=VA]').click()")
+        wait("document.querySelector('.state-readout').textContent.includes('Virginia')", 'Accessible state outage readout')
+        js("document.querySelector('#overview-county-map').click()")
+        wait("document.querySelector('#product').value==='power' && document.querySelector('#map-power-level').value==='county' && Number(document.querySelector('#atlas').dataset.zoom)>5", 'Selected state drills into its county outage map')
+        js("document.querySelector('.forecast-preview[data-forecast=winter]').click()")
+        wait("document.querySelector('#product').value==='winter' && document.querySelector('#winter-layer').value==='wssi_d1'", 'Winter thumbnail opens matching Day 1 layer')
+        js("document.querySelector('.forecast-preview[data-forecast=mpd]').click()")
+        wait("document.querySelector('#product').value==='mpd'", 'Discussion thumbnail opens MPDs')
+        js("document.querySelector('.forecast-preview[data-forecast=ero1]').click()")
+        wait("document.querySelector('#product').value==='ero1'", 'Rainfall thumbnail opens Day 1 ERO')
+        click_product('radar')
+        js("window.scrollTo(0,0)")
         assert js("return document.querySelectorAll('#impact-strip button[data-kpi]').length===4 && document.querySelector('#impact-strip').getBoundingClientRect().bottom<=document.querySelector('#map-stage').getBoundingClientRect().top")
         assert js("return document.querySelector('#map-stage').getBoundingClientRect().width/document.querySelector('#weather-spread').getBoundingClientRect().width>.64")
         assert js("return document.documentElement.dataset.theme==='dark' && !document.querySelector('#map-settings').open")
@@ -160,8 +178,17 @@ def check(url):
                 js("Array.from(document.querySelectorAll('[data-time-bin]')).find(b=>Number(b.querySelector('small').textContent)>0).click()")
                 wait("document.querySelector('#report-timing button[aria-pressed=true]') && document.querySelector('#report-table tbody tr')", 'Choose a reporting interval')
                 js("document.querySelector('[data-time-clear]').click()")
-                js("document.querySelector('#report-table [data-report]').click()")
-                wait("!document.querySelector('#board-view').hidden && (document.querySelector('[data-testid=idss-geo-popup]') || !document.querySelector('#map-detail').hidden)", 'Locate the selected observation')
+                # A whole page of PNS results can legitimately have place text only.
+                if not js("return !!document.querySelector('#report-table [data-report]')"):
+                    latest=js("return qaWeather.observations.features.filter(r=>Number.isFinite(r.latitude)&&Number.isFinite(r.longitude)&&r.place&&Date.parse(r.observedAt)>Date.now()-48*3600000).sort((a,b)=>Date.parse(b.observedAt)-Date.parse(a.observedAt))[0] || null")
+                    if latest:
+                        select('report-source',latest['sourceType'])
+                        js(f"const e=document.querySelector('#report-search');e.value={json.dumps(latest['place'])};e.dispatchEvent(new Event('input'))")
+                if js("return !!document.querySelector('#report-table [data-report]')"):
+                    js("document.querySelector('#report-table [data-report]').click()")
+                    wait("!document.querySelector('#board-view').hidden && (document.querySelector('[data-testid=idss-geo-popup]') || !document.querySelector('#map-detail').hidden)", 'Locate the selected observation')
+                else:
+                    assert js("return document.querySelector('#report-table').textContent.includes('Location text only')"), 'Unlocated observations retain an explicit location status'
         click_product('power')
         wait("document.querySelector('#atlas canvas') || /unavailable|unverified/i.test(document.querySelector('#map-foot').textContent)", 'Geographic outage display or explicit source status')
         select('region','CONUS')

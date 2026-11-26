@@ -127,6 +127,7 @@ def _empty(now):
         "reporting_utilities": None, "previous_reading_utilities": None,
         "affected_counties": None, "affected_states": None,
         "reporting_counties": None, "reporting_states": None,
+        "history": {"status": "unavailable", "counts": []},
         "covered_states": None, "states_status": "unavailable", "states_as_of": None,
         "counties_status": "unavailable", "counties_as_of": None, "states": [], "counties": [],
         "links": [
@@ -212,6 +213,35 @@ def _state_rows(raw, points, coverage):
     return rows
 
 
+def _history(status, stamp, raw):
+    result = {"status": status, "as_of": stamp, "counts": []}
+    if raw is None:
+        return result
+    result["status"] = "unavailable"
+    data = raw.get("data")
+    if not isinstance(data, dict) or data.get("step_minutes") != 15:
+        return result
+    counts = data.get("customers_out")
+    if not isinstance(counts, list) or not (2 <= len(counts) <= 97):
+        return result
+    start = data.get("start")
+    try:
+        if type(start) in (int, float):
+            start = datetime.fromtimestamp(start / 1000 if start > 10**11 else start, timezone.utc)
+        first = _instant(start)
+        last = first + timedelta(minutes=15 * (len(counts) - 1))
+        end = _instant(stamp)
+        if first > end or last > end + timedelta(minutes=15) or last < end - MAX_AGE:
+            return result
+    except (TypeError, ValueError, OSError, OverflowError):
+        return result
+    values = [_count(value) for value in counts]
+    if sum(value is not None for value in values) < 2:
+        return result
+    result.update(status="current", start=_iso(first), step_minutes=15, counts=values)
+    return result
+
+
 def collect(now_utc):
     """Return a JSON-safe snapshot at an aware datetime or ISO time with UTC offset.
 
@@ -247,13 +277,15 @@ def collect(now_utc):
         reporting_counties=county_count, reporting_states=state_count,
     )
     points = _load_points()
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        history_job = pool.submit(_request, "/outages/history", now)
         state_job = pool.submit(_request, "/outages/states", now)
         coverage_job = pool.submit(_request, "/status", now)
         county_job = pool.submit(_county_rows, now, points)
         states_status, states_stamp, states_raw = state_job.result()
         _, coverage_stamp, coverage_raw = coverage_job.result()
         counties_status, counties_stamp, counties = county_job.result()
+        result["history"] = _history(*history_job.result())
 
     status_data = coverage_raw["data"] if coverage_raw else {}
     if not isinstance(status_data, dict):

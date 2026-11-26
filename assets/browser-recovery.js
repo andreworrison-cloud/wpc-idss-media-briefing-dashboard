@@ -106,6 +106,8 @@ function combinePower(old,next,now) {
   const root=newer?next:old||(hasGeography?{...next,customers_out:null,as_of:null,status:'partial'}:null);
   if(!root)return null;
   const power={...root};
+  const histories=[old?.history,next.history].filter(h=>h?.status==='current'&&recent(h.as_of,now,30)&&Array.isArray(h.counts));
+  if(histories.length)power.history=histories.sort((a,b)=>time(b.as_of)-time(a.as_of))[0];
   for(const key of ['states','counties']) {
     const timeKey=key+'_as_of',stateKey=key+'_status';
     const good=supported(next[stateKey])&&timeAllowed(next[timeKey])&&Array.isArray(next[key])&&

@@ -322,8 +322,8 @@ export function createOutageLayer(options) {
     held=next;summary.visible_features=next.size;
     return declare(summary);
   }
-  async function focus(query,{popup:withPopup=false}={}) {
-    if(disposed||query==null)return false;
+  async function focus(query,{popup:withPopup=false,isCurrent=()=>true}={}) {
+    if(disposed||query==null||!isCurrent())return false;
     const q=String(query).trim().toLowerCase();
     const states=await fileAt(base,'states');
     let s=states.features.find(r=>[r[0],r[1],r[2]].some(v=>v.toLowerCase()===q));
@@ -343,7 +343,7 @@ export function createOutageLayer(options) {
       if(!r || (s[1]==='CT'&&(vintage==='mixed'||(vintage==='legacy'?NEW_CT.test(code):OLD_CT.test(code)))))return false;
       level='county';
     }
-    if(disposed)return false;
+    if(disposed||!isCurrent())return false;
     if(!active){active=true;controls(true);}
     // State focus in Hawaii opens on the main islands; Manawai and the outlying islands retain their coordinates.
     const box=level==='state'&&r[1]==='HI'?[-160.65,18.8,-154.7,22.5]:r[3];
@@ -352,7 +352,7 @@ export function createOutageLayer(options) {
     if(level==='county')mode='counties';
     map.fitBounds(bounds,{padding:[26,26],maxZoom:level==='state'?8:11,animate:false});
     await render();
-    if(withPopup&&!disposed)open(r,level,bounds.getCenter());
+    if(withPopup&&!disposed&&isCurrent())open(r,level,bounds.getCenter());
     return true;
   }
   const api={
