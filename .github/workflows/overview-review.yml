@@ -1,0 +1,57 @@
+name: Review IDSS overview
+on:
+  push:
+    branches: [idss-overview-visual-review]
+    paths: ['.github/workflows/overview-review.yml', 'assets/overview.css', 'assets/overview.js', 'assets/forecast-previews.js', 'assets/briefing.js', 'index.html', 'scripts/power.py', 'scripts/check_browser.py']
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Confirm public history schema
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          try:
+              url='https://poweroutmap.com/api/v1/outages/history'
+              with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'WPC-IDSS-Media-Briefing-Dashboard/1.0'}),timeout=12) as f:
+                  doc=json.load(f)
+              data=doc['data']
+              print('OUTAGE HISTORY SHAPE',[(key, len(v), v[:1]) for key,v in data.items() if isinstance(v,list)][:6])
+              print('OUTAGE HISTORY FIELDS',list(data))
+          except Exception as exc:
+              print('Historical feed check:',str(exc)[:140])
+          PY
+      - name: Check and render the candidate briefing
+        run: |
+          python -m pip --disable-pip-version-check install -q -r scripts/exposure-requirements.txt pillow
+          PYTHONPATH=scripts python -m unittest discover -s tests
+          node --test tests/*.test.mjs
+          python scripts/publish.py
+          python -m http.server 8117 --directory _site > /tmp/idss-preview-http.log 2>&1 &
+          python scripts/check_browser.py http://127.0.0.1:8117/
+      - name: Review public overview captures
+        if: always()
+        run: |
+          python - <<'PY'
+          from PIL import Image
+          import base64, io, pathlib, textwrap
+          for name in ['overview-opening','briefing-desktop','briefing-light','briefing-phone','check-failure']:
+              file=pathlib.Path('browser-check')/(name+'.png')
+              if file.exists():
+                  im=Image.open(file).convert('RGB')
+                  im.thumbnail((1100,820))
+                  out=io.BytesIO()
+                  im.save(out,format='JPEG',quality=74,optimize=True)
+                  encoded=base64.b64encode(out.getvalue()).decode()
+                  for i,chunk in enumerate(textwrap.wrap(encoded,900)):
+                      print('IDSS_SCREEN',name,i,chunk)
+          PY
