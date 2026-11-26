@@ -162,6 +162,7 @@ export function mountFocusDesk({onChange, onScopeChange, onLocate, onFit}) {
       meta.append(document.createTextNode([utc(row.observedAt),reportPeriod(row)].filter(Boolean).join(' · ')));
       if (meta.textContent) meta.append(document.createTextNode(' · '));
       meta.append(sourceLink(row.url,[row.sourceType,row.office].filter(Boolean).join(' / ') || 'NWS bulletin'));
+      if(row.verificationNote)meta.append(document.createTextNode(' · '+row.verificationNote));
       article.append(badge,button,qty,meta);
       mount.append(article);
     }
@@ -247,6 +248,7 @@ export function mountFocusDesk({onChange, onScopeChange, onLocate, onFit}) {
       const measured=r.measurementType==='windGust' ? 'a wind gust of '+reportAmount(r) : type+' of '+reportAmount(r);
       sentence += ' At '+siteLabel(r)+', NWS '+(r.office||'observers')+' reported '+measured;
       sentence += (period ? ' ('+period+')' : '')+', observed '+utc(r.observedAt)+'.';
+      if(r.verificationNote)sentence+=' '+r.verificationNote;
     }
     const lines = [sentence, c.asOf ? 'As of '+utc(c.asOf) : '', safeURL(c.sourceUrl), safeURL(model.evidence?.local?.[0]?.url)].filter(Boolean);
     const copy = lines.join('\n');

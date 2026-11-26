@@ -1,3 +1,4 @@
+import {eligibleReport} from './report-evidence.js';
 const SVGS={
  snow:'<path d="M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7M9 4l3 3 3-3M9 20l3-3 3 3M4 10l4-1-1-4M17 19l-1-4 4-1M4 14l4 1-1 4M17 5l-1 4 4 1"/>',
  ice:'<path d="M12 2 21 12 12 22 3 12ZM12 7v7m0 2v1"/>',
@@ -37,14 +38,14 @@ export function reportPoint(r) {
   const value=r.trace?'Trace':measurement.trim(), knownQ=r.qualifier&&!/^(unknown|not reported)$/i.test(r.qualifier)?r.qualifier:'';
   const label=r.label||phenomenon, head=value?value+' · '+phenomenon:label;
   const duration=r.durationHours??r.accumulation_hours;
-  const lines=[place,(r.observedAt||r.valid)?'Observed '+utc(r.observedAt||r.valid):'Observation time unavailable',
+  const lines=[place,r.verificationNote,(r.observedAt||r.valid)?'Observed '+utc(r.observedAt||r.valid):'Observation time unavailable',
     [source==='PNS'?'Public Information Statement':'Local Storm Report',r.office||r.wfo].filter(Boolean).join(' · '),
     Number.isFinite(duration)?duration+' h accumulation':r.periodLabel,
     [r.measurementType&&human(r.measurementType),knownQ&&human(knownQ)].filter(Boolean).join(' · '),
     (r.issuedAt||r.issued)?'Issued '+utc(r.issuedAt||r.issued):'',
     ...(r.impactFlags||r.impact_flags||[]).map(human)].filter(Boolean);
   return {id:r.id,lat,lon,cat,source,color:POINT_COLORS[cat],title:head,place,lines,detail:lines.join(' · '),
-    url:r.url||r.source_url,value,record:r};
+    url:r.url||r.source_url,verificationUrl:r.verificationUrl,value,record:r};
 }
 export function detailNode(doc,info,expanded=false) {
   const root=doc.createElement('div');root.className='idss-detail-content';
@@ -55,6 +56,7 @@ export function detailNode(doc,info,expanded=false) {
   const lines=info.lines?.length?info.lines:info.detail?[info.detail]:[];
   for(const line of lines.slice(0,expanded?18:5))if(line)add('span',line,'idss-detail-line');
   if(expanded&&info.url){try{const url=new URL(info.url);if(url.protocol==='https:'){const a=add('a','Open source ↗','idss-detail-source');a.href=url.href;a.target='_blank';a.rel='noopener';}}catch{}}
+  if(expanded&&info.verificationUrl){try{const u=new URL(info.verificationUrl);if(u.protocol==='https:'&&/\.(weather\.gov|noaa\.gov|iastate\.edu)$/.test(u.hostname)){const a=add('a','Supporting observation ↗','idss-detail-source');a.href=u.href;a.target='_blank';a.rel='noopener';}}catch{}}
   return root;
 }
 export function decorate(L,layer,info,opts={}) {
@@ -99,7 +101,7 @@ export function observationsOnMap(L,map,target,rows,{onDetail,source='all',categ
     }
   }
   for(const {records} of clusters){
-    const first=records[0],more=records.length-1,at=L.latLng(first.lat,near(first.lon));
+    const first=records.find(r=>eligibleReport(r.record))||records[0],more=records.length-1,at=L.latLng(first.lat,near(first.lon));
     const info=more?{...first,kind:[...new Set(records.map(r=>r.source))].filter(Boolean).join(' / ')+' · '+records.length+' reports',
       title:first.title,lines:[first.place,...first.lines.filter(v=>v!==first.place).slice(0,3),more+' additional nearby report'+(more===1?'':'s')]}:first;
     const marker=L.marker(at,{icon:pointIcon(L,doc,first,records.length,zoom>=6.2),alt:info.title,title:'',keyboard:true,autoPanOnFocus:false,pane:'idss-points',

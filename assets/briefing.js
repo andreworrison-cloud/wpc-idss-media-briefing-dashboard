@@ -55,7 +55,7 @@ applyAppearance(appearance);
 function writeDetail(info) {
   if(!info)return;
   const el=$('map-detail'), lines=info.lines?.length?info.lines:info.detail?[info.detail]:[];
-  el.innerHTML='<button type="button" aria-label="Close map detail">×</button><b>'+esc(info.title||'Map detail')+'</b> '+lines.map(esc).join(' · ')+(publicURL(info.url)?' · '+source(info.url,'Open source'):'');
+  el.innerHTML='<button type="button" aria-label="Close map detail">×</button><b>'+esc(info.title||'Map detail')+'</b> '+lines.map(esc).join(' · ')+(publicURL(info.url)?' · '+source(info.url,'Open source'):'')+(publicURL(info.verificationUrl)?' · '+source(info.verificationUrl,'Supporting observation'):'');
   el.hidden=false;el.querySelector('button').onclick=()=>{el.hidden=true;};
 }
 function writeLegend(result) {

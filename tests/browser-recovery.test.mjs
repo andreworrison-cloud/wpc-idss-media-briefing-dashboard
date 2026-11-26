@@ -146,3 +146,29 @@ test('NWPS network clock and transferred site inventory must corroborate a natio
 test('public response byte bounds also apply when content length is missing',async()=>{
   await assert.rejects(readPublicJSON('https://api.weather.gov/test',4,async()=>new Response('{"test":1}')));
 });
+
+test('a verified conflicting measurement stays in the report list and cannot become an automatic briefing maximum',async()=>{
+  const {reportEvidence,eligibleReport}=await import('../assets/report-evidence.js');
+  const {reportPresentation,appendObservedBrief}=await import('../assets/observed-graphics.js');
+  const source='https://mesonet.agron.iastate.edu/api/1/nwstext/202611261456-KLSX-NWUS53-LSRLSX';
+  const issue='2026-11-26T14:56:00Z',observed='2026-11-26T13:00:00Z';
+  const event={id:'one',city:'Cuba',state:'MO',wfo:'LSX',valid:observed,issued:issue,source_url:source,
+    magnitude:53,unit:'in',revision:'original'};
+  const second={...event,id:'two',city:'Clarksville',magnitude:1};
+  const original='https://api.weather.gov/products/6dc792a9-b877-4010-911a-9e33c19199f1';
+  const statement='Original report 53 inches. The cooperative station reported 5.3 inches at the same time.';
+  const row={id:'one',place:'Cuba',state:'MO',office:'LSX',sourceType:'LSR',measurementType:'snowfall',label:'Snowfall',category:'snow',
+    observedAt:observed,issuedAt:'2026-11-26T14:57:00Z',value:53,unit:'in',url:original,evidenceStatus:'bulletinVerified',
+    verificationStatus:'conflicting',eligibleForBrief:false,revision:'original',verificationNote:statement};
+  const obs={status:'ok',checkedAt:min(-1),features:[row,{...row,id:'normal',place:'French Village',value:14,eligibleForBrief:true,
+    verificationStatus:undefined,verificationNote:undefined,url:'https://api.weather.gov/products/another'}]};
+  const retained=reportEvidence([event,second],obs);
+  assert.equal(retained(event).url,original);
+  assert.equal(eligibleReport(retained(event)),false);
+  assert.equal(retained(second).evidenceStatus,'ambiguous');
+  assert.equal(retained({...event,revision:'correction'}).evidenceStatus,'ambiguous');
+  assert.equal(reportPresentation(row).lines.includes(statement),true);
+  const draft=appendObservedBrief({evidence:[],sections:[]},obs,{states:[],wfos:[],family:'winter',hours:24},now);
+  assert.match(draft.sections[0].lines.join(' '),/French Village.*14 inches/);
+  assert.doesNotMatch(draft.sections[0].lines.join(' '),/Cuba|53 inches/);
+});

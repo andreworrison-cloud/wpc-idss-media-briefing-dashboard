@@ -1,3 +1,4 @@
+import {eligibleReport} from './report-evidence.js';
 // The opening map, Census estimate and local observations share the same selected footprint.
 import {activeDay, currentAlerts, moduleState, safeURL} from './logic.js';
 import {exposureRecords, recent} from './impact-logic.js';
@@ -230,7 +231,7 @@ const leadTypes={
 
 function measured(row, now) {
   const t=Date.parse(row.observedAt);
-  return ['LSR','PNS'].includes(row.sourceType) && Boolean(row.place && safeURL(row.url)) &&
+  return eligibleReport(row) && ['LSR','PNS'].includes(row.sourceType) && Boolean(row.place && safeURL(row.url)) &&
     t<=now && t>=now-48*HOUR && (!row.issuedAt || Date.parse(row.issuedAt)<=now) &&
     units[row.measurementType]===row.unit && !(row.trace || /estimated/i.test(row.qualifier || '')) &&
     Number.isFinite(row.value) && (row.value>0 || ['heatIndex','windChill'].includes(row.measurementType));

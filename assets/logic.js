@@ -1,3 +1,4 @@
+import {eligibleReport,reportEvidence} from './report-evidence.js';
 import {addImpactEvidence, publicWeatherEvidence} from './impact-logic.js';
 const hour=3600000, minute=60000;
 export const labels={alerts:'NWS active alerts',reports:'NWS local storm reports via IEM',ero:'WPC Excessive Rainfall Outlook',winter:'WPC Winter Storm Severity Index',outlook:'WPC Days 3–7 Hazards Outlook',messages:'WPC and NWC Key Messages'};
@@ -44,7 +45,12 @@ export function currentAlerts(b,now=Date.now()){
     return {...a,segments:live,ugc,states:[...new Set(ugc.map(z=>z.slice(0,2)))],ffe:emergency?true:live.some(s=>s.ffe===null)?null:false,ffe_ugc:live.filter(s=>s.ffe===true).flatMap(s=>s.ugc),area:live.map(s=>s.area).filter(Boolean).join('; '),geometry:[],geometry_status:'Active segment boundary unavailable'};
   }).filter(a=>!Array.isArray(a.segments)||a.segments.length);
 }
-export const currentReports=(b,hrs=24,now=Date.now())=>usable(b,'reports',now)?(b.sources.reports.events||[]).filter(r=>{const t=Date.parse(r.valid);return t>=now-hrs*hour&&t<=now&&Date.parse(r.issued)<=now;}):[];
+export function currentReports(b,hrs=24,now=Date.now()){
+  if(!usable(b,'reports',now))return [];
+  const records=b.sources.reports.events||[],evidence=reportEvidence(records,b.weather?.observations);
+  return records.filter(r=>{const t=Date.parse(r.valid);return t>=now-hrs*hour&&t<=now&&Date.parse(r.issued)<=now;})
+    .map(r=>{const detail=evidence(r);return detail?{...r,...detail,source_url:detail.url,issued:detail.issuedAt||r.issued}:r;});
+}
 export const activeWinter=(b,now=Date.now())=>usable(b,'winter',now)&&Date.parse(b.sources.winter.valid_end)>now&&now-Date.parse(b.sources.winter.issued)<=6*hour?b.sources.winter:null;
 export const activeOutlook=(b,now=Date.now())=>usable(b,'outlook',now)&&Date.parse(b.sources.outlook.valid_end_date+'T00:00:00Z')+24*hour>now?b.sources.outlook:null;
 export function messageState(b,m,now=Date.now()){
@@ -77,7 +83,7 @@ export function parseScope(states,wfos){
 }
 const matches=(item,scope)=> (!scope.states.length||item.states?.some(st=>scope.states.includes(st)))&&(!scope.wfos.length||scope.wfos.includes(String(item.wfo||'').toUpperCase()))&&(!scope.family||scope.family===classifyFamily(item));
 export function priorities(b,now=Date.now()){
-  const out=[], reports=currentReports(b,24,now), alerts=currentAlerts(b,now);
+  const out=[], reports=currentReports(b,24,now).filter(eligibleReport), alerts=currentAlerts(b,now);
   const wpc=(b.sources.messages?.items||[]).find(m=>m.owner==='WPC'&&messageState(b,m,now)==='active');
   const emergency=alerts.find(a=>a.ffe===true), impact=reports.find(r=>r.impact_flags?.some(f=>/rescu|evacuat|debris|inundat|road.*clos|road.*impass|structure/i.test(f)));
   const warn=emergency||alerts.find(a=>a.severity==='Extreme'&&/Warning|Emergency/i.test(a.title))||
@@ -122,7 +128,7 @@ export function makeBrief(board,scope,now=Date.now()){
   if(!nationalMessage){
     const warn=alerts.find(a=>a.ffe===true)||alerts.find(a=>/Warning/i.test(a.title));
     if(warn)sound.push('The National Weather Service has a '+warn.title.toLowerCase()+' in effect for '+(warn.area||warn.states.join(', ')||'the area listed in the warning')+'.'+cite(warn.headline||warn.title,warn.source_url));
-    const obs=reports.find(r=>r.impact_flags?.length)||reports[0];
+    const obs=reports.find(r=>eligibleReport(r)&&r.impact_flags?.length)||reports.find(eligibleReport);
     if(obs)sound.push('A preliminary NWS report places '+obs.title.toLowerCase()+' near '+obs.city+', '+obs.state+', at '+isoTime(obs.valid,true)+'.'+cite('NWS '+obs.wfo+' preliminary report',obs.source_url));
   }
   if(!sound.length && (weather.winter[0]||weather.discussions[0]))sound.push(weather.winter[0]||weather.discussions[0]);
@@ -130,11 +136,12 @@ export function makeBrief(board,scope,now=Date.now()){
   sections.push({title:'On-air draft',lines:sound},{title:'Active warnings and alerts',lines:alertLines});
   if(usable(board,'reports',now)){
     obs.push(total(reports.length)+' preliminary storm report'+(reports.length===1?'':'s')+' matched the '+hrs+'-hour observation window ending '+isoTime(now,true)+' and the selected filters. Local offices may add or correct reports.'+cite('IEM public archive of NWS local storm reports',refs.reports));
-    const sorted=[...reports].sort((a,b)=>Number(Boolean(b.impact_flags?.length))-Number(Boolean(a.impact_flags?.length))||Date.parse(b.valid)-Date.parse(a.valid));
+    const sorted=reports.filter(eligibleReport).sort((a,b)=>Number(Boolean(b.impact_flags?.length))-Number(Boolean(a.impact_flags?.length))||Date.parse(b.valid)-Date.parse(a.valid));
     for(const r of sorted.slice(0,3)){
       let s=r.title+' was reported near '+[r.city,r.state].filter(Boolean).join(', ')+' at '+isoTime(r.valid,true)+'.';
       if(r.impact_flags?.length)s+=' The report mentions '+r.impact_flags.map(flagText).join(' and ')+'.';
       if(reportValue(r)!=='—')s+=' Reported value '+reportValue(r)+'.';
+      if(r.verificationNote)s+=' '+r.verificationNote;
       obs.push(s+cite('NWS '+r.wfo+' · '+r.title+' · '+isoTime(r.issued,true),r.source_url));
     }
   }else obs.push('Recent local storm reports could not be verified for the selected window.');

@@ -1,4 +1,5 @@
 // Convert only reviewed fields from the public archive. Bulletin bodies are never retained here.
+import {eligibleReport,reportEvidence} from './report-evidence.js';
 const HOUR=3600000, stamp=t=>new Date(t).toISOString();
 const bulletin=/^https:\/\/mesonet\.agron\.iastate\.edu\/api\/1\/nwstext\/(\d{12})-[A-Z0-9]{4}-[A-Z0-9]{6}-LSR[A-Z0-9]{2,3}(?:-[A-Z0-9]{3})?$/;
 const abbreviations='AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR VI AS GU MP UM'.split(' ');
@@ -47,6 +48,7 @@ function archiveRows(source, now) {
 }
 function observations(old,source,rows,cutoff,partial) {
   const asOf=source.window_end,windowStart=stamp(cutoff-48*HOUR),lsr=[];
+  const evidence=reportEvidence(rows,old);
   for (const r of rows) {
     const name=r.title?.toLowerCase(), spec=types[name];
     if (!spec&&!effects.has(name)) continue;
@@ -57,7 +59,7 @@ function observations(old,source,rows,cutoff,partial) {
     lsr.push({id:r.id,sourceType:'LSR',category,measurementType,label,phenomenon:r.title,unit:confirmedUnit,value:valid&&!trace?r.magnitude:null,trace,
       ...(r.state==='AT'?{marineArea:'Atlantic waters'}:{}),qualifier:trace?'Trace':['Measured','Estimated'].includes(r.qualifier)?r.qualifier:'Reported',place:publicPlace(r.city)||county||r.state,state:r.state,
       county,office:r.wfo,observedAt:r.valid,issuedAt:r.issued,latitude,longitude,url:r.source_url,
-      durationHours:r.accumulation_hours>0?r.accumulation_hours:null,periodLabel:null,impactFlags:Array.isArray(r.impact_flags)?r.impact_flags.filter(f=>allowedFlags.has(f)):[]});
+      durationHours:r.accumulation_hours>0?r.accumulation_hours:null,periodLabel:null,impactFlags:Array.isArray(r.impact_flags)?r.impact_flags.filter(f=>allowedFlags.has(f)):[],preliminary:r.preliminary!==false,revision:r.revision,...evidence(r)});
   }
   const pnsSource=old?.sources?.pns;
   const pns=new Map();
@@ -68,7 +70,7 @@ function observations(old,source,rows,cutoff,partial) {
   const leaders={};
   for (const [cat,type] of Object.entries(leaderTypes)){
     const byPlace=new Map(), coords=new Set();
-    const ranked=all.filter(r=>r.measurementType===type&&Number.isFinite(r.value)&&(r.value>0||['cold','heat'].includes(cat)))
+    const ranked=all.filter(r=>eligibleReport(r)&&r.measurementType===type&&Number.isFinite(r.value)&&(r.value>0||['cold','heat'].includes(cat)))
       .sort((a,b)=>cat==='cold'?a.value-b.value:b.value-a.value);
     for (const r of ranked) {
       const place=(r.state+' '+r.place).toLowerCase(), pt=Number.isFinite(r.latitude)?r.latitude.toFixed(2)+'/'+r.longitude.toFixed(2):null;

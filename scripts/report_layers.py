@@ -23,6 +23,17 @@ PAGES_BOARD = "https://andreworrison-cloud.github.io/wpc-idss-media-briefing-das
 TEXT = "https://mesonet.agron.iastate.edu/api/1/nwstext/"
 LSR = "https://mesonet.agron.iastate.edu/lsr/"
 PNS = "https://www.weather.gov/aly/PNS_Reports"
+# Specific reviewed bulletins can share one minute-based archive URL. Match the
+# original observation and value so a later NWS correction takes precedence.
+LSX_SNOW_REVIEW = {
+    ("Clarksville", 39.37, -90.91, 1.0): (
+        "0c55110e-5369-4d2a-aff7-68458e48dfe5", "2026-11-26T14:56:00Z",
+    ),
+    ("Cuba", 38.06, -91.4, 53.0): (
+        "6dc792a9-b877-4010-911a-9e33c19199f1", "2026-11-26T14:57:00Z",
+    ),
+}
+CUBA_COOP = "https://mesonet.agron.iastate.edu/COOP/cat.phtml?date=2026-11-26&network=MO_COOP&station=CUBM7"
 ABBR = "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY AS GU MP PR VI".split()
 NAMES = "Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|District of Columbia|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming|American Samoa|Guam|Northern Mariana Islands|Puerto Rico|Virgin Islands".lower().split(
     "|"
@@ -347,6 +358,132 @@ def report_archive(board):
     return reports if isinstance(reports, dict) else {}
 
 
+def apply_bulletin_review(row):
+    if (row["url"] != TEXT + "202611261456-KLSX-NWUS53-LSRLSX"
+            or row["observedAt"] != "2026-11-26T13:00:00Z"
+            or row["state"] != "MO" or row["measurementType"] != "snowfall"
+            or row["revision"] != "original"):
+        return
+    edition = LSX_SNOW_REVIEW.get((row["place"], row["latitude"], row["longitude"], row["value"]))
+    if not edition:
+        return
+    uuid, issued = edition
+    row.update(url="https://api.weather.gov/products/" + uuid, issuedAt=issued, evidenceStatus="bulletinVerified")
+    if row["place"] == "Cuba":
+        row.update(
+            verificationStatus="conflicting", eligibleForBrief=False, verificationUrl=CUBA_COOP,
+            verificationNote="The preliminary NWS storm report gives 53.0 inches. The Cuba cooperative station (CUBM7) reported 5.3 inches at the same 07:00 CST observation.",
+        )
+
+
+def archive_url(pil, fmt, start, end):
+    return BULK + "?" + urlencode({
+        "pil": pil, "fmt": fmt, "sdate": stamp(start), "edate": stamp(end), "limit": "9999",
+    })
+
+
+LSR_CLOCK = re.compile(r"\d{1,2}:?\d{2}\s*[AP]M", re.I)
+LSR_POSITION = re.compile(r"(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])", re.I)
+LSR_DATE = re.compile(r"^\s*(\d{1,2}/\d{1,2}/\d{4})\s+(.*)")
+LSR_AMOUNT = re.compile(r"^[MEU]?(" + NUM + r")\s*(" + UNITS + r")\b", re.I)
+
+
+def event_words(name):
+    words = {"tstm": "thunderstorm", "wnd": "wind", "gst": "gust", "dmg": "damage", "hvy": "heavy"}
+    return tuple(words.get(w, w) for w in re.findall("[a-z]+", name.lower()))
+
+
+def original_lsr_rows(body, issued):
+    zone = re.search(r"^\s*\d{1,4}(?::\d{2})?\s*[AP]M\s+([A-Z]{2,5})\s+(?:MON|TUE|WED|THU|FRI|SAT|SUN)", body, re.I | re.M)
+    if not zone:
+        return []
+    result = []
+    lines = body.splitlines()
+    for line, detail in zip(lines, lines[1:]):
+        # The standard LSR uses fixed columns. A full-width event name can
+        # leave a single space in front of the city.
+        clock, phenomenon, town = line[:12].strip(), line[12:29].strip(), line[29:53].strip()
+        coordinates = LSR_POSITION.match(line[53:].strip())
+        if not LSR_CLOCK.fullmatch(clock) or not coordinates or not town or not phenomenon:
+            continue
+        date = LSR_DATE.match(detail)
+        if not date:
+            continue
+        y, ns, x, ew = coordinates.groups()
+        observed = from_local(date[1], clock, zone[1].upper(), issued)
+        if not observed:
+            continue
+        amount = LSR_AMOUNT.match(date[2])
+        result.append((town.casefold(), event_words(phenomenon), stamp(observed),
+                       float(y) * (-1 if ns.upper() == "S" else 1),
+                       float(x) * (-1 if ew.upper() == "W" else 1),
+                       amount.groups() if amount else None))
+    return result
+
+
+def original_matches(row, entry):
+    town, event, observed, y, x, amount = entry
+    if (town != row["place"].casefold()
+            or (row["phenomenon"] != "Other local storm report" and event != event_words(row["phenomenon"]))
+            or observed != row["observedAt"]
+            or (row["latitude"] is not None and
+                (abs(y-row["latitude"]) > 0.011 or abs(x-row["longitude"]) > 0.011))):
+        return False
+    if row["value"] is None and not row["trace"]:
+        return True
+    if not amount:
+        return False
+    value, unit, trace = magnitude(*amount, row["measurementType"])
+    return unit == row["unit"] and trace == row["trace"] and value == row["value"]
+
+
+def check_shared_lsr_links(rows, info):
+    groups = defaultdict(list)
+    for row in rows:
+        if PRODUCT.fullmatch(row["url"]):
+            groups[row["url"]].append(row)
+    shared = {}
+    for url, members in groups.items():
+        if len({(r["place"], r["latitude"], r["longitude"]) for r in members}) < 2:
+            continue
+        minute, _, _, pil, *_ = url[len(TEXT):].split("-")
+        shared.setdefault(pil + "_" + minute, []).extend(members)
+    if not shared:
+        return
+    editions = defaultdict(set)
+    times = [instant(member["issuedAt"]) for members in shared.values() for member in members]
+    try:
+        bulk = archive_url("LSR", "zip", min(times), max(times) + timedelta(minutes=1))
+        with ZipFile(BytesIO(fetch(bulk, 22_000_000, "application/zip"))) as archive:
+            entries = archive.infolist()
+            if len(entries) >= 9999 or sum(f.file_size for f in entries) > 70_000_000:
+                raise ValueError("Incomplete LSR archive")
+            for f in entries:
+                key = f.filename.removesuffix(".txt")
+                if key in shared:
+                    # Two different products can have the same ZIP name. Reading
+                    # the member object preserves each distinct original bulletin.
+                    editions[key].add(archive.read(f).decode("utf-8", errors="replace").replace("\r", ""))
+    except ERR:
+        editions.clear()
+    unresolved = 0
+    for key, members in shared.items():
+        issued = instant(members[0]["issuedAt"])
+        bodies = editions[key]
+        original = [entry for body in bodies for entry in original_lsr_rows(body, issued)]
+        combined_url = archive_url(key.split("_")[0], "text", issued, issued + timedelta(minutes=1))
+        for row in members:
+            if len(bodies) > 1:
+                row["url"] = combined_url
+            if any(original_matches(row, entry) for entry in original):
+                row["evidenceStatus"] = "archiveVerified" if len(bodies) > 1 else "bulletinVerified"
+            else:
+                row.update(evidenceStatus="ambiguous", eligibleForBrief=False,
+                           verificationNote="This minute-indexed archive link is shared by several locations. The original bulletin for this observation could not be verified.")
+                unresolved += 1
+    info["ambiguousEvidenceCount"] = unresolved
+
+
 def lsr_rows(board, end):
     info = source_info("NWS Local Storm Reports via IEM", LSR, end)
     if board is None:
@@ -418,6 +555,12 @@ def lsr_rows(board, end):
         typ = LSR_TYPES.get(key, "event")
         dur = number(item.get("accumulation_hours"))
         q = item.get("qualifier")
+        # IEM encodes a trace of accumulated precipitation as 0.0001 inches.
+        # The original bulletin prints T, which must remain distinct from zero.
+        trace = item.get("trace") or (
+            typ in ("snowfall", "sleet", "rainfall", "iceAccretion")
+            and item.get("unit") == "in" and number(item.get("magnitude")) == 0.0001
+        )
         row = report(
             "LSR",
             item.get("wfo"),
@@ -431,7 +574,7 @@ def lsr_rows(board, end):
             link,
             typ,
             name,
-            "T" if item.get("trace") else item.get("magnitude"),
+            "T" if trace else item.get("magnitude"),
             item.get("unit"),
             q if q in ("Measured", "Estimated") else "Reported",
             dur if dur and dur > 0 else None,
@@ -444,7 +587,11 @@ def lsr_rows(board, end):
         if row["state"] in MARINE_AREAS:
             row["marineArea"] = MARINE_AREAS[row["state"]]
         row["id"] = item["id"]
-        rows[row["id"]] = row
+        row["preliminary"] = item.get("preliminary", True) is True
+        row["revision"] = item.get("revision", "original")
+        apply_bulletin_review(row)
+        if instant(row["issuedAt"]) <= cutoff:
+            rows[row["id"]] = row
     info["status"] = "partial" if partial else "ok"
     return list(rows.values()), info
 
@@ -981,6 +1128,7 @@ def collect(now, board=None):
         pns = ex.submit(pns_rows, end)
         lrows, li = lsr.result()
         prows, pi = pns.result()
+    check_shared_lsr_links(lrows, li)
     for rows, info in ((lrows, li), (prows, pi)):
         if info["status"] in {"ok", "partial"}:
             info["located"] = sum(r["latitude"] is not None for r in rows)
@@ -995,6 +1143,7 @@ def collect(now, board=None):
             r
             for r in rows
             if r["measurementType"] == typ
+            and r.get("eligibleForBrief") is not False
             and r["value"] is not None
             and (r["value"] > 0 or cat in ("cold", "heat"))
         ]

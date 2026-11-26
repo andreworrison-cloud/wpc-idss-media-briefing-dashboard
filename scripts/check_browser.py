@@ -90,7 +90,15 @@ def check(url):
         wait("document.querySelector('#map-settings').open && Number(document.querySelector('#layer-count').textContent)>=1", 'Collapsible layer controls')
         snap('map-layers')
         js("document.querySelector('#close-layers').click()")
-        view('products');view('sources');view('board')
+        view('products');view('sources')
+        flagged=js("return qaWeather.observations?.features?.find(r=>r.verificationStatus==='conflicting' && r.eligibleForBrief===false && r.verificationUrl) || null")
+        if flagged:
+            view('observations')
+            assert flagged['id'] not in js("return [...document.querySelectorAll('#measure-graphics [data-report]')].map(el=>el.dataset.report)")
+            js(f"const e=document.querySelector('#report-search');e.value={json.dumps(flagged['place'])};e.dispatchEvent(new Event('input'))")
+            wait("document.querySelector('#report-table .report-verification a[href^=https]')",'Conflicting observation retains linked source evidence')
+            js("const e=document.querySelector('#report-search');e.value='';e.dispatchEvent(new Event('input'))")
+        view('board')
         choices=js("return [...document.querySelector('#focus-product').options].filter(o=>o.value).map(o=>o.value)")
         if choices:
             wait("document.querySelector('#atlas').dataset.briefingFeatures>0 && document.querySelector('[data-kpi=exposure] .kpi-value') && !document.querySelector('#map-focus-key').hidden", 'Matched briefing footprint and Census estimate')

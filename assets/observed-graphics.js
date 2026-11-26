@@ -1,3 +1,4 @@
+import {eligibleReport} from './report-evidence.js';
 import {safeURL, isoTime} from './logic.js';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -56,7 +57,7 @@ export function scopedReports(rows, scope={}, now=Date.now()) {
 }
 function isComparable(row, spec) {
   const t=String(row.measurementType||'').toLowerCase();
-  return row.category===spec.key && Number.isFinite(row.value) && row.value>=0 && (t===spec.type.toLowerCase() || (spec.key==='ice'&&['iceaccretion','iceaccumulation'].includes(t)));
+  return eligibleReport(row) && row.category===spec.key && Number.isFinite(row.value) && row.value>=0 && (t===spec.type.toLowerCase() || (spec.key==='ice'&&['iceaccretion','iceaccumulation'].includes(t)));
 }
 function localLeaders(rows, spec) {
   const seen=new Set();
@@ -68,8 +69,8 @@ function localLeaders(rows, spec) {
 }
 function chart(rows, spec, collection, hasFilter) {
   const qualified=localLeaders(rows, spec);
-  const official = (collection?.leaders?.[spec.key]||[]).filter(r=>rows.some(v=>v.id===r.id));
-  const leaders = hasFilter ? qualified : official.slice(0,3);
+  const official = (collection?.leaders?.[spec.key]||[]).filter(r=>eligibleReport(r)&&rows.some(v=>v.id===r.id));
+  const leaders = hasFilter || !official.length ? qualified : official.slice(0,3);
   const top=leaders[0], max=top?.value||0;
   const title='<figcaption class="measure-name"><svg aria-hidden="true"><use href="#i-'+spec.icon+'"/></svg><b>'+spec.name+'</b><small>'+spec.unit+'</small></figcaption>';
   if(!leaders.length) {
@@ -82,12 +83,12 @@ function chart(rows, spec, collection, hasFilter) {
     const attrs=esc([place(r),r.label,amountDetail(r),r.sourceType,r.office,when(r)].filter(Boolean).join(', '));
     return '<li><button type="button" class="chart-row" data-report="'+esc(r.id)+'" title="'+attrs+'" aria-label="'+attrs+'"><span class="chart-place">'+esc(place(r))+'</span><svg xmlns="'+NS+'" class="plot-line" viewBox="-2 0 104 12" preserveAspectRatio="none" aria-hidden="true"><path d="M0 6H100" stroke="#cfdbdf" stroke-width="1"/><rect x="0" y="3.5" width="'+end.toFixed(2)+'" height="5" fill="currentColor"/><path d="M0 1v10" stroke="#849ba4" stroke-width="1"/></svg><strong>'+esc((/estimated/i.test(r.qualifier)?'~':'')+numeric(r.value))+'</strong></button></li>';
   }).join('');
-  const provenance=[top.sourceType,top.office,when(top),reportPeriod(top)].filter(Boolean).join(' · ');
+  const provenance=[top.sourceType,top.office,when(top),reportPeriod(top),top.verificationNote].filter(Boolean).join(' · ');
   return '<figure class="measurement" data-measure="'+spec.key+'">'+title+'<ol>'+points+'</ol><small class="chart-provenance">Top report · '+esc(provenance)+'</small></figure>';
 }
 export function reportPresentation(row) {
   const amount=amountDetail(row);
-  return {title: (row.label||row.phenomenon||'NWS report')+' · '+place(row),detail:[amount,row.phenomenon&&row.phenomenon!==row.label?row.phenomenon:null].filter(Boolean).join(' · '),lines:[row.observedAt?'Observed '+asDate(row.observedAt):'Observation time unspecified',row.issuedAt?'Issued '+asDate(row.issuedAt):null,[row.sourceType,row.office].filter(Boolean).join(' · ')].filter(Boolean),url:safeURL(row.url)};
+  return {title: (row.label||row.phenomenon||'NWS report')+' · '+place(row),detail:[amount,row.phenomenon&&row.phenomenon!==row.label?row.phenomenon:null].filter(Boolean).join(' · '),lines:[amount,row.verificationNote,row.observedAt?'Observed '+asDate(row.observedAt):'Observation time unspecified',row.issuedAt?'Issued '+asDate(row.issuedAt):null,[row.sourceType,row.office].filter(Boolean).join(' · ')].filter(Boolean),url:safeURL(row.url),verificationUrl:safeURL(row.verificationUrl)};
 }
 export function appendObservedBrief(draft, observations, scope, now=Date.now()) {
   const rows=scopedReports(availableRows(observations,now),{hours:scope.hours},now).filter(r=>(!scope.states.length||scope.states.includes(r.state))&&(!scope.wfos.length||scope.wfos.includes(r.office)));
@@ -104,7 +105,7 @@ export function appendObservedBrief(draft, observations, scope, now=Date.now()) 
     const estimate=/estimated/i.test(r.qualifier||'');
     const quantity=spec.key==='wind'?(estimate?'an estimated ':'a ')+'wind gust of '+value:(estimate?'an estimated ':'')+value+' of '+spec.name.toLowerCase();
     const period=Number.isFinite(r.durationHours)&&r.durationHours>0?' over '+r.durationHours+' '+(r.durationHours===1?'hour':'hours'):r.periodLabel?' ('+r.periodLabel.toLowerCase()+')':'';
-    lines.push('At '+place(r)+', the '+r.office+' '+r.sourceType+' reported '+quantity+period+'. '+(r.observedAt?'Observed '+asDate(r.observedAt):'Bulletin issued '+asDate(r.issuedAt))+'. ['+(id+1)+']');
+    lines.push('At '+place(r)+', the '+r.office+' '+r.sourceType+' reported '+quantity+period+'. '+(r.observedAt?'Observed '+asDate(r.observedAt):'Bulletin issued '+asDate(r.issuedAt))+'. '+(r.verificationNote?r.verificationNote+' ':'')+'['+(id+1)+']');
   }
   if(lines.length)draft.sections.splice(1,0,{title:'Measured weather in the selected area',lines});
   return draft;
@@ -160,10 +161,11 @@ export function mountObservationDesk(onSelect) {
       get('report-table').innerHTML='<p class="empty">'+(available?'No available records match these filters.':'The current bulletin collection is unavailable.')+'</p>';get('report-pager').replaceChildren();return;
     }
     const link=r=>safeURL(r.url)?'<a href="'+esc(safeURL(r.url))+'" target="_blank" rel="noopener">'+esc([r.sourceType,r.office].filter(Boolean).join(' · '))+'</a>':esc([r.sourceType,r.office].filter(Boolean).join(' · '));
+    const review=r=>r.verificationNote?'<small class="report-verification">'+esc(r.verificationNote)+(safeURL(r.verificationUrl)?' <a href="'+esc(safeURL(r.verificationUrl))+'" target="_blank" rel="noopener">Supporting observation</a>':'')+'</small>':'';
     const lines=filtered.slice(page*pageSize,(page+1)*pageSize).map(r=>{
       const located=Number.isFinite(r.latitude)&&Number.isFinite(r.longitude);
       const loc=located?'<button type="button" class="locate" data-report="'+esc(r.id)+'">'+esc(place(r))+'</button>':esc(place(r))+'<small>Location text only</small>';
-      return '<tr><td>'+loc+'</td><td>'+esc(r.label||r.phenomenon)+(r.phenomenon!==r.label&&r.phenomenon?'<small>'+esc(r.phenomenon)+'</small>':'')+'</td><td>'+esc(reportAmount(r)||'Event report')+'<small>'+esc([r.qualifier,reportPeriod(r)].filter(Boolean).join(' · '))+'</small></td><td>'+esc(asDate(r.observedAt)||'Unspecified')+'<small>Issued '+esc(asDate(r.issuedAt)||'time unspecified')+'</small></td><td>'+link(r)+'</td></tr>';
+      return '<tr><td>'+loc+'</td><td>'+esc(r.label||r.phenomenon)+(r.phenomenon!==r.label&&r.phenomenon?'<small>'+esc(r.phenomenon)+'</small>':'')+'</td><td>'+esc(reportAmount(r)||'Event report')+'<small>'+esc([r.qualifier,reportPeriod(r)].filter(Boolean).join(' · '))+'</small>'+review(r)+'</td><td>'+esc(asDate(r.observedAt)||'Unspecified')+'<small>Issued '+esc(asDate(r.issuedAt)||'time unspecified')+'</small></td><td>'+link(r)+'</td></tr>';
     }).join('');
     get('report-table').innerHTML='<div class="scroll-table"><table><thead><tr><th scope="col">Location</th><th scope="col">Phenomenon</th><th scope="col">Measurement</th><th scope="col">Observed UTC</th><th scope="col">Bulletin / WFO</th></tr></thead><tbody>'+lines+'</tbody></table></div>';
     get('report-pager').innerHTML='<span>'+(page*pageSize+1)+'–'+Math.min((page+1)*pageSize,filtered.length)+' of '+filtered.length+'</span><button type="button" data-turn="-1" '+(!page?'disabled':'')+'>Previous</button><button type="button" data-turn="1" '+(page+1===pages?'disabled':'')+'>Next</button>';

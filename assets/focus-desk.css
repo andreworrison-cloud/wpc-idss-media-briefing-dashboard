@@ -254,6 +254,7 @@ th { background:var(--panel-high);color:var(--muted); }.scroll-table tbody tr:nt
 @media (max-width:335px) {
   .mast nav { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }
+.report-verification { display:block;color:var(--notice);font-weight:600;line-height:1.35;max-width:48ch; }
 @media print {
   :root,:root[data-theme] {color-scheme:light;--paper:white;--panel:white;--ink:#122839;--muted:#344d5c;--action:#153e5d;--rule:#aaa;}
   body,main,#brief-view,#brief-output { background:#fff!important;color:#152431!important; }

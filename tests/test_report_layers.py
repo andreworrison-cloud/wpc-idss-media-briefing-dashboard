@@ -2,6 +2,7 @@ import io
 import json
 import unittest
 import zipfile
+import warnings
 from unittest.mock import patch
 
 import report_layers as m
@@ -309,6 +310,61 @@ Olcott                       21 in      0100 PM 11/20""")
         self.assertEqual((info["status"], rows[0]["state"], rows[0]["marineArea"], rows[0]["latitude"]),
                          ("ok", "AT", "Atlantic waters", 37.24))
         self.assertEqual(m.lsr_rows(board([{**marine, "state": "XX"}]), END)[1]["status"], "partial")
+
+    def test_verified_cuba_conflict_preserves_original_and_corrected_or_other_deep_snow(self):
+        observed = "2026-11-26T13:00:00Z"
+        url = m.TEXT + "202611261456-KLSX-NWUS53-LSRLSX"
+        cuba = event("Snow", 53, "in", id="cuba", wfo="LSX", state="MO", city="Cuba", lat=38.06, lon=-91.4,
+                     valid=observed, issued="2026-11-26T14:56:00Z", source_url=url)
+        clark = {**cuba, "id":"clark", "city":"Clarksville", "lat":39.37, "lon":-90.91, "magnitude":1}
+        other = {**cuba, "id":"mountain", "city":"Summit", "lat":39.4, "lon":-106.2, "state":"CO",
+                 "source_url":m.TEXT+"202611261456-KBOU-NWUS55-LSRBOU", "wfo":"BOU", "magnitude":57}
+        end = m.instant("2026-11-26T17:55:00Z")
+        with patch.object(m,"fetch",return_value=archive({})):
+            d = m.collect(end, board([cuba,clark,other],window_end=m.stamp(end)))
+        r = next(r for r in d["features"] if r["id"]=="cuba")
+        self.assertEqual((r["value"],r["eligibleForBrief"],r["verificationStatus"],r["preliminary"]),
+                         (53,False,"conflicting",True))
+        self.assertTrue(r["url"].endswith("6dc792a9-b877-4010-911a-9e33c19199f1"))
+        self.assertIn("CUBM7",r["verificationUrl"])
+        self.assertTrue(next(r for r in d["features"] if r["id"]=="clark")["url"].endswith("0c55110e-5369-4d2a-aff7-68458e48dfe5"))
+        self.assertEqual([(r["place"],r["value"]) for r in d["leaders"]["snow"]],[("Summit",57),("Clarksville",1)])
+        fixed = {**cuba,"revision":"correction","magnitude":5.3}
+        rows,_ = m.lsr_rows(board([fixed],window_end=m.stamp(end)),end)
+        self.assertIsNot(rows[0].get("eligibleForBrief"),False)
+        self.assertEqual((rows[0]["value"],rows[0]["revision"]),(5.3,"correction"))
+
+    def test_shared_minute_matches_each_original_station_and_does_not_assume_collision(self):
+        raw = [event("Snow",3,"in",id="a",city="Town A"), event("Snow",5,"in",id="b",city="Town B")]
+        def bulletin(cities):
+            text = "NWUS51 KBUF 241700\nLSRBUF\nPreliminary Local Storm Report\n1200 PM EST Tue Nov 24 2026\n"
+            for town,value in cities:
+                text += f"{'1100 AM':<12}{'Snow':<17}{town:<24}42.90N 78.90W\n"
+                text += f"11/24/2026  M{value} Inch   Erie   NY   Public\n"
+            return text
+        filename = "LSRBUF_202611241700.txt"
+        first,second = ("Town A",3),("Town B",5)
+        for editions,expected in [([[first,second]],["bulletinVerified","bulletinVerified"]),
+                                  ([[first],[second]],["archiveVerified","archiveVerified"]),
+                                  ([[first]],["bulletinVerified","ambiguous"])]:
+            stream = io.BytesIO()
+            with warnings.catch_warnings(), zipfile.ZipFile(stream,"w") as z:
+                warnings.simplefilter("ignore",UserWarning)
+                for part in editions:
+                    z.writestr(filename,bulletin(part))
+            rows,info=m.lsr_rows(board(raw),END)
+            with patch.object(m,"fetch",return_value=stream.getvalue()):
+                m.check_shared_lsr_links(rows,info)
+            self.assertEqual([r["evidenceStatus"] for r in rows],expected)
+            if expected[1]=="ambiguous":
+                self.assertIs(rows[1]["eligibleForBrief"],False)
+            elif expected[1]=="archiveVerified":
+                self.assertIn("fmt=text", rows[1]["url"])
+
+    def test_iem_trace_sentinel_stays_distinct_from_zero(self):
+        raw = [event("Snow",0.0001,"in",id="trace"),event("Snow",0,"in",id="zero")]
+        rows,_=m.lsr_rows(board(raw),END)
+        self.assertEqual([(r["value"],r["trace"]) for r in rows],[(None,True),(0,False)])
 
     def test_cap_is_disclosed_even_when_complete_source_counts_are_known(self):
         events = [event(), event("Snow", 3, "in")]
