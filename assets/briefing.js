@@ -120,7 +120,7 @@ function syncControls() {
 }
 async function startMap() {
   try{
-    const {mountCommandMap,MAP_REGIONS}=await import('./command-map.js');
+    const {mountCommandMap,MAP_REGIONS}=await import('./command-map.js?v=20261126');
     if(MAP_REGIONS)$('region').innerHTML=Object.entries(MAP_REGIONS).map(([key,rec])=>option(key,rec.label||key)).join('');
     $('region').value='CONUS';
     map=mountCommandMap($('atlas'),{basemap:$('base-style').value,basemapControl:false,
@@ -185,16 +185,16 @@ const focusDesk=mountFocusDesk({
     $('map-stage').scrollIntoView({block:'nearest'});
   }
 });
-visualOverview=mountOverview((id,region)=>{
+if($('forecast-previews'))visualOverview=mountOverview((id,region)=>{
   if(id==='winter'&&[...$('winter-layer').options].some(o=>o.value==='wssi_d1'))$('winter-layer').value='wssi_d1';
   showMap(id,true);
   if([...$('region').options].some(o=>o.value===region)){$('region').value=region;map?.region(region);}
 });
-$('overview-exposure-map').onclick=()=>{
+$('overview-exposure-map')?.addEventListener('click',()=>{
   const selection=focusDesk.getSelection();
   if(!board||!selection)return;
   selectExposureFocus(board,selection);renderImpactDetails();showMap('exposure',true);
-};
+});
 const settings=$('map-settings');
 function closeLayers(){settings.open=false;settings.querySelector('summary').focus({preventScroll:true});}
 $('close-layers').onclick=closeLayers;
@@ -329,7 +329,7 @@ function renderImpactDetails(){
 }
 function render() {
   $('impact-strip').setAttribute('aria-busy','false');
-  focusDesk.update(board);kpiStrip.update(board,focusDesk.getSelection());visualOverview.update(board,focusDesk.getSelection());configureProducts();
+  focusDesk.update(board);kpiStrip.update(board,focusDesk.getSelection());visualOverview?.update(board,focusDesk.getSelection());configureProducts();
   renderImpactDetails();showImpact(currentImpact);
   reports.update(board.weather?.observations);updateMap(true);renderPriorities();renderMessages();renderSources();renderCatalog();chooseBrief();renderBrief();
   const t=board.recovery?.collectorRevision||board.revision||board.captured_at;
@@ -374,7 +374,7 @@ async function refresh(){
       recoverRelease(active,{onUpdate:paint})
     ]);
   }
-  catch{if(board){focusDesk.update(board);kpiStrip.update(board,focusDesk.getSelection());visualOverview.update(board,focusDesk.getSelection());updateMap();$('sync-status').textContent='Refresh unavailable · Last collection '+time(board.revision);}else{focusDesk.update(null);kpiStrip.update(null,null);visualOverview.update(null,null);$('impact-strip').setAttribute('aria-busy','false');$('sync-status').textContent='Current briefing collection unavailable';reports.update(null);for(const id of ['priorities','ground-panel','exposure-panel','weather-source-rows','impact-source-rows','sources-table'])$(id).textContent='Current collection unavailable.';
+  catch{if(board){focusDesk.update(board);kpiStrip.update(board,focusDesk.getSelection());visualOverview?.update(board,focusDesk.getSelection());updateMap();$('sync-status').textContent='Refresh unavailable · Last collection '+time(board.revision);}else{focusDesk.update(null);kpiStrip.update(null,null);visualOverview?.update(null,null);$('impact-strip').setAttribute('aria-busy','false');$('sync-status').textContent='Current briefing collection unavailable';reports.update(null);for(const id of ['priorities','ground-panel','exposure-panel','weather-source-rows','impact-source-rows','sources-table'])$(id).textContent='Current collection unavailable.';
     $('brief-output').textContent='A current collection is required to generate a source-linked briefing.';
     $('power-panel').innerHTML='<p>Current utility figures are unavailable. '+source('https://poweroutage.us/','PowerOutage.us map')+' · '+source('https://poweroutmap.com/','Power Out Map')+'</p>';
     $('aviation-panel').innerHTML='<p>Current FAA notices are unavailable. '+source('https://nasstatus.faa.gov/','FAA status')+' · '+source('https://www.flightaware.com/live/cancelled/today/US','U.S. flight delays and cancellations on FlightAware')+'</p>';if(!mapModuleFailed)$('map-foot').textContent='Current weather layers unavailable.';}}
