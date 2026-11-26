@@ -1,8 +1,11 @@
 name: Publish IDSS briefing
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '7,17,27,37,47,57 * * * *'
+    inputs:
+      run_browser_checks:
+        description: Run additional desktop and mobile Chrome checks
+        type: boolean
+        default: false
   push:
     branches: [main]
 
@@ -114,12 +117,12 @@ jobs:
           REVISION: ${{ needs.build.outputs.revision }}
         run: python3 -m scripts.verify_pages "$PAGE_URL" "$REVISION"
       - name: Exercise the briefing map and reports in Chrome
-        if: github.event_name != 'schedule'
+        if: github.event_name == 'push' || inputs.run_browser_checks
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: python3 scripts/check_browser.py "$PAGE_URL"
       - uses: actions/upload-artifact@v4
-        if: github.event_name != 'schedule' && always()
+        if: always() && (github.event_name == 'push' || inputs.run_browser_checks)
         with:
           name: briefing-browser-check-${{ github.run_attempt }}
           path: browser-check/*.png
