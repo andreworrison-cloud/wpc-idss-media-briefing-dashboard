@@ -208,7 +208,9 @@ for(const b of document.querySelectorAll('[data-map-product]'))b.onclick=()=>{
   setPowerLevel('county');
   if($('outage-level'))$('outage-level').value='county';
   showMap('power',true);
-  if(state&&map)map.focusOutage(state,{popup:false}).catch(()=>{});
+  if(state&&map)map.focusOutage(state,{popup:false}).catch(()=>{
+    if(product==='power')mapNotice({layer:'stateFocus',status:'partial',message:'State boundaries are unavailable. Use the region selector to reposition the map.'});
+  });
 };
 $('product').onchange=e=>{showMap(e.target.value);closeLayers();};
 $('region').onchange=e=>map?.region(e.target.value);
