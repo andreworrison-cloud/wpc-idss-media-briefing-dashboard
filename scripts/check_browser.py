@@ -72,7 +72,7 @@ def check(url):
         wait("document.querySelector('#focus-headline') && !document.querySelector('#focus-headline').textContent.startsWith('Loading')", 'Opening briefing resolves')
         def on_screen(selector):
             return js(f"const r=document.querySelector({json.dumps(selector)}).getBoundingClientRect(); return r.width>0 && r.top>=0 && r.top+30<innerHeight")
-        assert all(on_screen(s) for s in ['#atlas','#focus-headline','#outage-heading','#air-heading','.quick-products']), 'Map, current impacts and map product controls share the first screen'
+        assert all(on_screen(s) for s in ['#atlas','#focus-headline','#outage-heading','#air-heading','.quick-products','#forecast-previews']), 'Map, current impacts and map product controls share the first screen'
         if js("return !!document.querySelector('#focus-glance').textContent"):
             assert on_screen('#focus-glance'), 'Selected measurement on the opening desktop'
         wait("document.querySelectorAll('.forecast-preview canvas[data-drawn=true]').length===3", 'Three plotted WPC forecast maps')
@@ -80,6 +80,8 @@ def check(url):
         snap('overview-opening')
         js("document.querySelector('.state-tile[data-code=VA]').click()")
         wait("document.querySelector('.state-readout').textContent.includes('Virginia')", 'Accessible state outage readout')
+        js("document.querySelector('#overview-county-map').click()")
+        wait("document.querySelector('#product').value==='power' && document.querySelector('#map-power-level').value==='county' && Number(document.querySelector('#atlas').dataset.zoom)>5", 'Selected state drills into its county outage map')
         js("document.querySelector('.forecast-preview[data-forecast=winter]').click()")
         wait("document.querySelector('#product').value==='winter' && document.querySelector('#winter-layer').value==='wssi_d1'", 'Winter thumbnail opens matching Day 1 layer')
         js("document.querySelector('.forecast-preview[data-forecast=mpd]').click()")

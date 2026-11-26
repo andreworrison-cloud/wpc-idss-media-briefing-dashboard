@@ -202,7 +202,14 @@ document.addEventListener('pointerdown',e=>{if(settings.open&&!settings.contains
 settings.addEventListener('keydown',e=>{if(e.key==='Escape'){closeLayers();}});
 const reports=mountObservationDesk(focusReport);
 for(const b of document.querySelectorAll('[data-product]'))b.addEventListener('click',()=>{showMap(b.dataset.product);settings.open=false;});
-for(const b of document.querySelectorAll('[data-map-product]'))b.onclick=()=>showMap(b.dataset.mapProduct,true);
+for(const b of document.querySelectorAll('[data-map-product]'))b.onclick=()=>{
+  if(b.id!=='overview-county-map'){showMap(b.dataset.mapProduct,true);return;}
+  const state=document.querySelector('#overview-power .state-tile.is-selected')?.dataset.code;
+  setPowerLevel('county');
+  if($('outage-level'))$('outage-level').value='county';
+  showMap('power',true);
+  if(state&&map)map.focusOutage(state,{popup:false}).catch(()=>{});
+};
 $('product').onchange=e=>{showMap(e.target.value);closeLayers();};
 $('region').onchange=e=>map?.region(e.target.value);
 $('zoom-in').onclick=()=>map?.zoomBy(.5);$('zoom-out').onclick=()=>map?.zoomBy(-.5);

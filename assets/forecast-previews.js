@@ -36,7 +36,7 @@ export function previewData(id,board,now=Date.now()){
     }else{
       if(data.explicit_no_mpd===true&&data.count===0&&data.status!=='partial')model.message='No active MPD';
       else model.message='Active coverage unconfirmed';
-      model.time=sourceTime(data.checked_at||data.checkedAt||data.as_of||data.asOf);
+      model.time=sourceTime(data.checked_at||data.checkedAt||data.retrieved_at||data.as_of||data.asOf);
     }
     return model;
   }

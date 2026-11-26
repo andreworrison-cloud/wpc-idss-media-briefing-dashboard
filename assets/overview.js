@@ -62,7 +62,7 @@ function outageHistory(el,history,now) {
   counts.forEach((v,i)=>{if(validCount(v))points.push([+(2+316*i/(counts.length-1)).toFixed(2),+(53-46*v/scale).toFixed(2)]);else segment();});
   segment();
   const axis=node('div','chart-axis');
-  axis.append(node('span','',clock.format(start)+' UTC'),node('strong','','Peak '+number.format(peak)),node('span','',clock.format(end)+' UTC'));
+  axis.append(node('span','',dateTime.format(start)+' UTC'),node('strong','','Peak '+number.format(peak)),node('span','',dateTime.format(end)+' UTC'));
   el.append(label,svg,axis);
 }
 function mountPower(el) {
@@ -139,6 +139,9 @@ function airBoard(el,air,now){
     if(events.length>4)el.append(sourceLine('Showing 4 of '+number.format(events.length)+' active notices.'));
   }else el.append(muted(live&&air.status!=='partial'?'FAA lists no active airport notices.':live?'No active notices in the available FAA records.':'Current FAA airport notices unavailable.'));
   el.append(sourceLine(['FAA NAS Status',live&&air.status==='partial'?'Partial coverage':'',live?stamp(air.as_of):''].filter(Boolean).join(' · ')));
+  const daily=node('a','daily-air-link','Today’s U.S. delays and cancellations ↗');
+  daily.href='https://www.flightaware.com/live/cancelled/today/US';daily.target='_blank';daily.rel='noopener noreferrer';daily.setAttribute('aria-label','Today’s U.S. delays and cancellations on FlightAware');
+  el.append(daily);
   const m=air?.monthly_context;
   if(m?.status==='historical'&&m.period_label&&validCount(m.delayed_arrivals)&&validCount(m.cancelled)){
     const box=node('div','monthly-air'), title=node('div','month-label','U.S. domestic flights · '+m.period_label);
