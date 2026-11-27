@@ -31,8 +31,6 @@
 .idss-detail-title{font-size:14px;line-height:1.24;display:block;color:inherit}
 .idss-detail-line{font-size:11px;display:block;color:inherit}
 .idss-detail-source{justify-self:start;display:block;margin-top:4px;color:#125C83!important;font-weight:700;text-decoration:underline}
-.idss-nearby-list{display:grid;gap:3px;margin-top:7px}
-.idss-nearby-list button{background:#EDF3F4;border:1px solid #B8C9CD;text-align:left;font-family:inherit;font-size:11px;line-height:1.3;color:#123D55;padding:4px 6px;border-radius:4px;cursor:pointer}
 @media(max-width:650px){.idss-map.leaflet-container{min-height:315px}.idss-map .leaflet-control-zoom a{width:36px;height:36px;line-height:36px}.idss-map .leaflet-control-attribution{max-width:72vw;font-size:8px}.idss-map .leaflet-control-zoom{margin:8px}}
 /* Base cartography is styled separately from every meteorological layer. */
 .idss-map[data-basemap=dark]{background:#0c1e2e}

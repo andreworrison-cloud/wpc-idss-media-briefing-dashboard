@@ -31,6 +31,7 @@ const table=(headers,lines)=>'<div class="scroll-table"><table><thead><tr>'+head
 const impactIDs=['exposure','power','aviation','ground'];
 const blankScope=()=>({name:'',states:[],wfos:[],family:'',hours:24,exposure_id:'',band_id:''});
 let board=null, handoff=null, map=null, mapModuleFailed=false, product='radar', currentImpact='exposure', loading=false;
+let groundSource='all';
 let scope=blankScope(), briefText='', catalogPage=0, catalogRows=[], legend=null, loop=null, frame=null, frameStamp=null;
 const notices=new Map();
 const views = new Set([...document.querySelectorAll('[data-view]')].map(el=>el.dataset.view));
@@ -106,6 +107,14 @@ function radarFrames(){return validRadar()?(board.weather.radar.frames||[]).filt
 function syncControls() {
   $('power-control').hidden=product!=='power'; $('map-power-level').value=powerLevel();
   $('winter-control').hidden=product!=='winter'; $('observation-control').hidden=product!=='observations';
+  if($('map-point-controls')){
+    const reports=product==='observations',ground=product==='ground';
+    $('map-point-controls').hidden=!reports&&!ground;
+    $('weather-point-sources').hidden=!reports;$('ground-point-sources').hidden=!ground;
+    $('map-report-window').hidden=!reports;$('map-report-hours').value=$('report-hours').value;
+    for(const b of document.querySelectorAll('[data-map-source]'))b.setAttribute('aria-pressed',String(b.dataset.mapSource===$('report-source').value));
+    for(const b of document.querySelectorAll('[data-ground-source]'))b.setAttribute('aria-pressed',String(b.dataset.groundSource===groundSource));
+  }
   const primary=product==='winter'&&$('winter-layer').value==='winter_alerts'?'winter_alerts':product;
   const enabled=new Set([primary]);
   for(const [id,layer] of Object.entries({'show-radar':'radar','show-alerts':'alerts','show-mpds':'mpd','show-reports':'observations','show-counties':'counties'})){
@@ -120,10 +129,11 @@ function syncControls() {
 }
 async function startMap() {
   try{
-    const {mountCommandMap,MAP_REGIONS}=await import('./command-map.js?v=20261126');
+    const {mountCommandMap,MAP_REGIONS}=await import('./command-map.js?v=20261127');
     if(MAP_REGIONS)$('region').innerHTML=Object.entries(MAP_REGIONS).map(([key,rec])=>option(key,rec.label||key)).join('');
     $('region').value='CONUS';
-    map=mountCommandMap($('atlas'),{basemap:$('base-style').value,basemapControl:false,
+    map=mountCommandMap($('atlas'),{basemap:$('base-style').value,basemapControl:false,pointPanel:$('nearby-panel'),
+      onPointSelection:()=>{$('map-detail').hidden=true;},
       onBasemapChange:key=>{$('base-style').value=key;},onLegend:writeLegend,onDetail:writeDetail,onStatus:mapNotice});
     updateMap(true);
   }catch{mapModuleFailed=true;$('map-foot').textContent='The geographic map could not be loaded. Source-linked measurements and impact details remain available below.';}
@@ -132,7 +142,7 @@ function updateMap(newBoard=false) {
   syncControls();focusDesk.syncMapKey(product);if(!map)return;
   const pick=board?selectedExposure(board):{};
   const query={product,powerMode:({auto:'auto',state:'states',county:'counties'})[powerLevel()],reportHours:Number($('report-hours').value)||48, layers:{reports:$('show-reports').checked,alerts:$('show-alerts').checked,mpds:$('show-mpds').checked,radar:$('show-radar').checked,counties:$('show-counties').checked},observation:$('map-observation').value,source:$('report-source').value||'all',winterLayer:$('winter-layer').value||'winter_alerts',radarFrame:frame,exposureRecord:pick.record||null,exposureBand:pick.band||null,exposureState:pick.state||''};
-  query.briefingFocus=product==='radar'?focusDesk.mapContext():null;
+  query.groundSource=groundSource;query.briefingFocus=product==='radar'?focusDesk.mapContext():null;
   if(newBoard||!board)query.board=board;
   map.update(query);
 }
@@ -158,8 +168,9 @@ function showImpact(id) {
 function focusReport(row) {
   const info=reportPresentation(row),located=Number.isFinite(row.latitude)&&Number.isFinite(row.longitude);
   navigate('board');
-  if(located){$('map-observation').value=row.category||'all';showMap('observations');map?.focus({...row,...info});}
-  writeDetail(info);$('map-stage').scrollIntoView({block:'start'});
+  $('map-stage').scrollIntoView({block:'start'});
+  if(located&&map){$('map-observation').value=row.category||'all';showMap('observations');map.focus({...row,...info});}
+  else writeDetail(info);
 }
 const kpiStrip=mountImpactStrip($('impact-strip'),(id,choice)=>{
   if(id==='exposure' && board){
@@ -202,7 +213,15 @@ document.addEventListener('pointerdown',e=>{if(settings.open&&!settings.contains
 settings.addEventListener('keydown',e=>{if(e.key==='Escape'){closeLayers();}});
 const reports=mountObservationDesk(focusReport);
 for(const b of document.querySelectorAll('[data-product]'))b.addEventListener('click',()=>{showMap(b.dataset.product);settings.open=false;});
+for(const b of document.querySelectorAll('[data-map-source]'))b.onclick=()=>{
+  $('report-source').value=b.dataset.mapSource;$('report-source').dispatchEvent(new Event('change',{bubbles:true}));
+};
+for(const b of document.querySelectorAll('[data-ground-source]'))b.onclick=()=>{groundSource=b.dataset.groundSource;updateMap();};
+$('map-report-hours')?.addEventListener('change',e=>{
+  $('report-hours').value=e.target.value;$('report-hours').dispatchEvent(new Event('change',{bubbles:true}));
+});
 for(const b of document.querySelectorAll('[data-map-product]'))b.onclick=()=>{
+  if(b.dataset.mapProduct==='ground')groundSource=b.closest('.river-monitor')?'NWPS':b.closest('.ground-desk')?'LSR':'all';
   if(b.id!=='overview-county-map'){showMap(b.dataset.mapProduct,true);return;}
   const state=document.querySelector('#overview-power .state-tile.is-selected')?.dataset.code;
   setPowerLevel('county');

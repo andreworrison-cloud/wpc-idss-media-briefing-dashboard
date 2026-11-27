@@ -58,6 +58,46 @@ def check(url):
                     js("document.querySelector('#map-settings summary').click()")
                 select('product',name)
             wait(f"document.querySelector('#product').value==='{name}'", name+' choice')
+        def browse_group(phone=False):
+            # The live edition may legitimately contain single records only.
+            size=js("""
+                const marks=[...document.querySelectorAll('#atlas [data-point-count]')];
+                const cluster=marks.sort((a,b)=>Number(b.dataset.pointCount)-Number(a.dataset.pointCount))[0];
+                if(!cluster || Number(cluster.dataset.pointCount)<2)return 0;
+                cluster.click();
+                return Number(cluster.dataset.pointCount);
+            """)
+            if not size: return
+            wait("!document.querySelector('#nearby-panel').hidden && document.querySelector('#nearby-panel .nearby-row')", 'Nearby observation list')
+            assert not js("return !!document.querySelector('#atlas .leaflet-popup')"), 'Selecting a group leaves the map free of a popup'
+            dimensions=js("""
+                const p=document.querySelector('#nearby-panel'), r=p.getBoundingClientRect();
+                const m=document.querySelector('#atlas').getBoundingClientRect();
+                return [r.width,p.scrollWidth-p.clientWidth,p.scrollHeight-p.clientHeight,r.top-m.bottom,r.left-m.right];
+            """)
+            assert dimensions[0]>=300 and max(dimensions[1:3])<=2, ('Readable panel without an internal scrollbar',dimensions)
+            if phone:
+                assert dimensions[3]>=-2 and js("return document.documentElement.scrollWidth<=392"), 'The full-width phone list follows the map'
+            else:
+                assert dimensions[4]>=-2, 'The desktop list docks beside the map'
+            assert js("return document.querySelectorAll('#nearby-panel .nearby-row').length")==min(4,size)
+            if size>4:
+                js("document.querySelector('#nearby-panel [data-action=next]').click()")
+                wait("document.querySelector('.nearby-pager [role=status]').textContent.startsWith('5–')", 'Next page starts with the fifth entry')
+                js("document.querySelector('#nearby-panel [data-action=previous]').click()")
+                wait("document.querySelector('.nearby-pager [role=status]').textContent.startsWith('1–4')", 'Return to first page')
+                js("const e=document.querySelector('#nearby-search'); e.focus();e.value='zzzznoentry';e.dispatchEvent(new Event('input',{bubbles:true}))")
+                assert js("return !document.querySelector('.nearby-row') && document.activeElement.id==='nearby-search' && document.querySelector('.nearby-empty').textContent.includes('No matching')")
+                js("const e=document.querySelector('#nearby-search');e.value='';e.dispatchEvent(new Event('input',{bubbles:true}))")
+            js("document.querySelector('#nearby-panel').scrollIntoView({block:'center'})")
+            snap('nearby-reports-phone' if phone else 'nearby-reports-desktop')
+            chosen=js("const b=document.querySelector('.nearby-row'),k=b.dataset.value;b.click();return k")
+            wait("document.querySelector('.nearby-reading .nearby-fields') && !document.querySelector('.nearby-rows')", 'Selected entry opens its source and measurement')
+            assert js("return document.querySelector('.nearby-fields').textContent.includes('UTC')")
+            js("document.querySelector('#nearby-panel [data-action=back]').click()")
+            assert js("return document.activeElement.dataset.value")==chosen, 'Back returns to the selected report'
+            js("document.querySelector('#nearby-panel').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))")
+            wait("document.querySelector('#nearby-panel').hidden && document.querySelector('#atlas').contains(document.activeElement)", 'Escape returns focus to the map')
         api(prefix+'/url', {'url':url})
         wait("document.querySelector('#atlas.leaflet-container[data-zoom]') && document.querySelector('#impact-strip [data-kpi=exposure]')", 'Geographic map and impact figures')
         wait("document.querySelector('#winter-layer option[value=wssi_d1]') && document.querySelector('#report-table')", 'Public weather inventory')
@@ -170,6 +210,13 @@ def check(url):
             wait("document.querySelector('[data-testid=idss-geo-tooltip]')?.textContent.includes('UTC')", 'Observation hover includes time and location')
             wait("/Local Storm Report|Public Information Statement/i.test(document.querySelector('[data-testid=idss-geo-tooltip]').textContent)", 'Report source on hover')
             snap('observation-hover')
+            browse_group()
+            js("document.querySelector('[data-map-source=PNS]').click()")
+            wait("document.querySelector('#report-source').value==='PNS' && [...document.querySelectorAll('#atlas [data-observation-id]')].every(e=>!e.getAttribute('aria-label').includes('local storm report'))", 'PNS source selection applies to the map and the observation table')
+            select('map-report-hours','6')
+            wait("document.querySelector('#report-hours').value==='6'", 'Time window agrees on map and observations tab')
+            js("document.querySelector('#weather-point-sources button').click()")
+            select('map-report-hours','48')
             if js("return qaWeather.observations.features.some(r=>r.sourceType==='PNS')"):
                 view('observations')
                 select('report-source','PNS')
@@ -186,7 +233,7 @@ def check(url):
                         js(f"const e=document.querySelector('#report-search');e.value={json.dumps(latest['place'])};e.dispatchEvent(new Event('input'))")
                 if js("return !!document.querySelector('#report-table [data-report]')"):
                     js("document.querySelector('#report-table [data-report]').click()")
-                    wait("!document.querySelector('#board-view').hidden && (document.querySelector('[data-testid=idss-geo-popup]') || !document.querySelector('#map-detail').hidden)", 'Locate the selected observation')
+                    wait("!document.querySelector('#board-view').hidden && (!document.querySelector('#nearby-panel').hidden || !document.querySelector('#map-detail').hidden)", 'Locate the selected observation')
                 else:
                     assert js("return document.querySelector('#report-table').textContent.includes('Location text only')"), 'Unlocated observations retain an explicit location status'
         click_product('power')
@@ -207,7 +254,14 @@ def check(url):
         if js("return document.querySelector('#focus-glance').textContent.length>0"):
             assert on_screen('#focus-glance'), 'Measured amount should be visible beside the mobile briefing'
         snap('briefing-phone')
-        print('Verified simultaneous map and briefing, hazard and observation scope changes, quarter-step zoom, radar, winter, MPDs, report hover, outage geography, state brief and phone layout.')
+        js("document.querySelector('.river-monitor [data-map-product=ground]').click()")
+        wait("document.querySelector('#product').value==='ground' && document.querySelector('[data-ground-source=NWPS]').getAttribute('aria-pressed')==='true'", 'Gauge map selects NWPS')
+        assert js("return [...document.querySelectorAll('#atlas [data-point-count]')].filter(e=>Number(e.dataset.pointCount)>1).every(e=>e.getAttribute('aria-label').includes('river gauges'))"), 'Gauge counts name the stations being grouped'
+        click_product('observations')
+        js("document.querySelector('#weather-point-sources button').click()")
+        select('map-report-hours','48')
+        browse_group(phone=True)
+        print('Verified map and briefing, source-scoped report groups, observations and pagination, quarter-step zoom, radar, winter, MPDs, outages, state brief and phone layout.')
     except Exception:
         if 'prefix' in locals():
             snap('check-failure')
