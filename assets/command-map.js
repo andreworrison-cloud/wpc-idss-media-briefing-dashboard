@@ -1,5 +1,7 @@
 import {ASSET_ROOT,MAP_REGIONS,geometryNear,mountBase,BASEMAP_CHOICES} from './geographic-base.js';
-import {utc,detailNode,decorate,observationsOnMap,reportPoint,POINT_COLORS,POINT_LABELS} from './map-points.js';
+import {utc,detailNode,decorate,observationsOnMap,reportPoint,POINT_COLORS,POINT_LABELS} from './map-points.js?v=20261127';
+import {mountPointBrowser} from './point-browser.js';
+import {collectionState} from './observed-graphics.js?v=20261127';
 import {activeDay,activeWinter,activeOutlook,currentAlerts,currentReports,moduleState,refs} from './logic.js';
 import {activeAirEvents,currentRivers,currentGroundReports,exposureRecords,gaugeColors,impactNames,links} from './impact-logic.js';
 import {ERO_COLORS,ERO_OUTLINES,WSSI_COLORS,EXTENDED_COLORS,alertStyle,inkFor} from './hazard-palette.js';
@@ -16,6 +18,11 @@ const safeSource=value=>{try{const u=new URL(value);return u.protocol==='https:'
 const nowValue=x=>typeof x==='function'?Number(x()):Number.isFinite(x)?x:Date.now();
 const validUntil=(val,now)=>!val||Date.parse(val)>now;
 const fresh=(row,now)=>Boolean(row&&GOOD.has(String(row.status||'current').toLowerCase())&&validUntil(row.fresh_until,now));
+function currentReportCollection(ob,now){
+  if(!fresh(ob,now))return false;
+  if(!ob.asOf&&!ob.checkedAt)return Boolean(ob.fresh_until);
+  return GOOD.has(collectionState(ob,now));
+}
 const asFeatures=source=>Array.isArray(source)?source:source?.features||[];
 const imageBounds=b=>Array.isArray(b)&&b.length===2&&b.every(p=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite))&&b[0][0]<b[1][0]&&b[0][1]<b[1][1]&&b[0][0]>=-85.0512&&b[1][0]<=85.0512;
 function imageURL(value,allowEmbedded) {
@@ -90,7 +97,7 @@ export function mountCommandMap(container,options={}) {
   makePanes(map);
   const scene=L.layerGroup().addTo(map), reportsLayer=L.layerGroup().addTo(map), selectedLayer=L.layerGroup().addTo(map);
   const briefingLayer=L.layerGroup().addTo(map),warningsLayer=L.layerGroup().addTo(map);
-  const state={board:null,briefingFocus:null,product:'ero1',reportHours:48,observation:'all',source:'all',winterLayer:'wssi_d1_3',radarFrame:null,
+  const state={board:null,briefingFocus:null,product:'ero1',reportHours:48,observation:'all',source:'all',groundSource:'all',winterLayer:'wssi_d1_3',radarFrame:null,
     layers:{alerts:false,reports:true,radar:false,winter:false,mpds:true,counties:false}};
   let dead=false,ref=null,points=[],pointIndex=new Map(),pointTimer,autopanning=false,selectionEpoch=0,legendSerial='',lastLegend=null;
   let countyLayer=null,countyEpoch=0,countyRenderer=null;
@@ -99,6 +106,44 @@ export function mountCommandMap(container,options={}) {
   let gisShapes=null,gisPending=false,gisAfter=0,gisFailed=false,warningCache=null;
   let briefingCache=null;
   let radarKey='',radarImage=null,radarInfo=null;
+  const pointPin=L.layerGroup().addTo(map);
+  let pinRequest=0;
+  function clearPin(){pinRequest++;pointPin.clearLayers();}
+  const nearPoint=p=>L.latLng(p.lat,p.lon+360*Math.round((map.getCenter().lng-p.lon)/360));
+  const panel=options.pointPanel;
+  const browser=panel&&mountPointBrowser(panel,{
+    pin(p,keepVisible){
+      clearPin();
+      const here=nearPoint(p),ticket=pinRequest;
+      for(const [radius,color,weight] of [[16,'#142e40',5],[16,'#ffffff',2.5]]){
+        L.circleMarker(here,{pane:'idss-selected',interactive:false,fill:false,radius,color,weight}).addTo(pointPin);
+      }
+      if(keepVisible)requestAnimationFrame(()=>{
+        if(dead||ticket!==pinRequest)return;
+        map.invalidateSize({pan:false});map.panInside(here,{padding:[30,30],animate:false});
+      });
+    },
+    fit(group){
+      if(!group.length)return;
+      map.invalidateSize({pan:false});
+      const positions=group.map(nearPoint);
+      if(positions.every(p=>p.equals(positions[0])))map.setView(positions[0],Math.max(8.5,map.getZoom()),{animate:false});
+      else map.fitBounds(L.latLngBounds(positions),{padding:[30,30],maxZoom:12,animate:false});
+      if(panel.getBoundingClientRect().top>=container.getBoundingClientRect().bottom-1)container.scrollIntoView({block:'nearest'});
+    },
+    restore(last){
+      requestAnimationFrame(()=>{
+        if(dead)return;
+        map.invalidateSize({pan:false});drawPoints();
+        focusMarker(last?.point.id);
+        if(container.getBoundingClientRect().bottom<80)container.scrollIntoView({block:'nearest'});
+      });
+    },
+    clear:clearPin
+  });
+  function inspect(group,first,origin){
+    map.closePopup();options.onPointSelection?.();browser.open(group,first,origin);
+  }
   const base=mountBase(L,map,{root,style:options.basemap,tiles:options.tiles??true,showControl:options.basemapControl!==false,onStyleChange:options.onBasemapChange,onStatus:emitStatus,onReference:g=>{ref=g;if(state.product==='exposure')render();}});
   function emitStatus(info){if(!dead)options.onStatus?.(info);}
   function emitLegend(items,note,phase='') {
@@ -108,8 +153,9 @@ export function mountCommandMap(container,options={}) {
   }
   function region(code='CONUS') {
     const id=String(code).toUpperCase(), choice=MAP_REGIONS[id];
-    if(choice){map.fitBounds(choice.bounds,{padding:[10,10],animate:false});return true;}
+    if(choice){browser?.close();map.fitBounds(choice.bounds,{padding:[10,10],animate:false});return true;}
     const st=ref?.states.find(s=>s.code===id);if(!st)return false;
+    browser?.close();
     const geometry=geometryNear(st.geometry,st.code==='AK'?-154:st.center[1]);
     map.fitBounds(L.geoJSON(geometry).getBounds(),{padding:[15,15],maxZoom:9,animate:false});return true;
   }
@@ -318,16 +364,31 @@ export function mountCommandMap(container,options={}) {
     if(kind==='aviation'){
       const a=board.impacts?.aviation; items.push(key('FAA airport program',POINT_COLORS.plane,'plane'));
       notes.push('FAA airport-status notices'+(a?.as_of?' · '+utc(a.as_of):'')+'.');
-      return activeAirEvents(a,now).map(e=>({id:e.id||e.airport,cat:'plane',color:POINT_COLORS.plane,source:'FAA',lat:e.lat,lon:e.lon,
-        title:[e.airport,e.airport_name].filter(Boolean).join(' · '),place:e.airport,lines:[e.label,e.delay,e.reason||e.scope,period(e.start_utc,e.end_utc)].filter(Boolean),url:e.source_url||links.aviation}));
+      return activeAirEvents(a,now).map(e=>({id:e.id||e.airport,noticeKey:[e.kind,e.start_utc,e.label],cat:'plane',color:POINT_COLORS.plane,source:'FAA',lat:e.lat,lon:e.lon,
+        title:[e.airport,e.airport_name].filter(Boolean).join(' · '),place:[e.airport,e.airport_name].filter(Boolean).join(' · '),measure:e.label,value:e.delay,
+        issuedAt:e.updated_utc,period:period(e.start_utc,e.end_utc),noticeDetail:e.reason||e.scope,lines:[e.label,e.delay,e.reason||e.scope,period(e.start_utc,e.end_utc)].filter(Boolean),url:e.source_url||links.aviation}));
     }
     const g=board.impacts?.ground||{},out=[];
-    for(const r of currentRivers(g.rivers,now))out.push({id:r.id||r.lid,cat:'gauge',source:'NWPS',color:gaugeColors[r.category],lat:r.latitude,lon:r.longitude,
-      title:r.name+', '+r.state,place:r.state,lines:[r.category+' flooding',[r.value,r.unit].filter(v=>v!=null).join(' '),'Observed '+utc(r.observedAt)],url:r.url});
-    for(const r of currentGroundReports(g.reports,now))out.push({id:r.id,cat:'impact',source:'LSR',color:POINT_COLORS.impact,lat:r.latitude,lon:r.longitude,
-      title:r.location+', '+r.state,place:r.state,lines:[(r.categories||[]).map(c=>impactNames[c]||c).join(', '),'Observed '+utc(r.observedAt)],url:r.url});
-    for(const [label,color] of Object.entries(gaugeColors))items.push(key(label+' flooding',color,'gauge'));
-    items.push(key('Ground impact report',POINT_COLORS.impact,'impact'));notes.push('NWPS flood-stage observations and preliminary local impact reports.');return out;
+    if(state.groundSource!=='LSR'){
+      for(const r of currentRivers(g.rivers,now)){
+        const name=r.name||r.location||r.id||r.lid||'River gauge',place=r.state&&!name.endsWith(' '+r.state)?name+', '+r.state:name;
+        const value=r.value==null?'':[r.value,r.unit].filter(v=>v!=null).join(' '),measure=r.category+' flooding';
+        out.push({id:r.id||r.lid,cat:'gauge',source:'NWPS',color:gaugeColors[r.category],lat:r.latitude,lon:r.longitude,
+          title:place,place,measure,value,stationId:r.id||r.lid,observedAt:r.observedAt,lines:[measure,value,'Observed '+utc(r.observedAt)],url:r.url});
+      }
+      for(const [label,color] of Object.entries(gaugeColors))items.push(key(label+' flooding',color,'gauge'));
+    }
+    if(state.groundSource!=='NWPS'){
+      for(const r of currentGroundReports(g.reports,now)){
+        const place=[r.location,r.location===r.state?'':r.state].filter(Boolean).join(', '),measure=(r.categories||[]).map(c=>impactNames[c]||c).join(', ');
+        out.push({id:r.id,cat:'impact',source:'LSR',color:POINT_COLORS.impact,lat:r.latitude,lon:r.longitude,
+          title:place,place,measure,hazard:r.hazard,office:r.office,county:r.county,observedAt:r.observedAt,issuedAt:r.reportedAt,
+          lines:[measure,'Observed '+utc(r.observedAt),'Local Storm Report'+(r.office?' · '+r.office:'')],url:r.url});
+      }
+      items.push(key('Ground impact report',POINT_COLORS.impact,'impact'));
+    }
+    notes.push(state.groundSource==='NWPS'?'NWPS flood-stage gauge readings.':state.groundSource==='LSR'?'Preliminary NWS ground-impact reports.':'NWPS flood-stage observations and preliminary local impact reports.');
+    return out;
   }
   function briefingSelection(){
     const selection=state.briefingFocus,now=nowValue(options.now);
@@ -429,22 +490,27 @@ export function mountCommandMap(container,options={}) {
       const place=doc.createElement('small');place.textContent=point.place;box.append(context,amount,place);tag.append(box);
       const m=L.marker(at,{icon:L.divIcon({html:tag,className:'idss-labeled-point',iconSize:[0,0],iconAnchor:[0,0],tooltipAnchor:[0,-5]}),
         alt:point.title,keyboard:true,autoPanOnFocus:false,pane:'idss-callouts'}).addTo(reportsLayer);
-      decorate(L,m,point,{document:doc,onDetail:options.onDetail,sticky:false});
+      decorate(L,m,point,{document:doc,onDetail:options.onDetail,sticky:false,onInspect:browser&&((origin)=>inspect([point],point,origin))});
       m.getElement()?.setAttribute('aria-label',point.title+', '+point.place);
     }
   }
+  function focusMarker(id){
+    const match=[...container.querySelectorAll('[data-observation-id]')].find(el=>el.dataset.observationId===String(id));
+    (match||container).focus({preventScroll:true});
+  }
   function drawPoints() {
+    const held=container.contains(doc.activeElement)?doc.activeElement.dataset.observationId:null;
     clearTimeout(pointTimer);reportsLayer.clearLayers();
     const occupied=drawHazardLabel();
-    if(!points.length){pointIndex.clear();return;}
-    const isImp=state.product==='ground'||state.product==='aviation',selection=briefingSelection(), reportIds=selection?.reports;
-    const source=isImp?'all':state.source,category=isImp?'all':state.observation;
+    if(!points.length){pointIndex.clear();if(held!=null)focusMarker(held);return;}
+    const selection=briefingSelection(), reportIds=selection?.reports;
     const featured=(Array.isArray(reportIds)?reportIds:[]).slice(0,3).map(row=>points.find(p=>p.id===(typeof row==='string'?row:row?.id))).filter(p=>
-      p?.value&&(source==='all'||p.source===source.toUpperCase())&&(category==='all'||p.cat===category));
+      p?.value);
     const ids=new Set(featured.map(r=>r.id));
     // Place the representative observation at its exact reported coordinate in each group.
-    pointIndex=observationsOnMap(L,map,reportsLayer,[...featured,...(ids.size?points.filter(p=>!ids.has(p.id)):points)],{onDetail:options.onDetail,source,category,doc});
+    pointIndex=observationsOnMap(L,map,reportsLayer,[...featured,...(ids.size?points.filter(p=>!ids.has(p.id)):points)],{onDetail:options.onDetail,onInspect:browser&&inspect,doc});
     if(featured.length)drawReportLabels(featured,occupied,selection.reportScope);
+    if(held!=null)focusMarker(held);
   }
   function writePowerLegend(){
     if(!powerLayers||!isPower(state.product))return;
@@ -527,14 +593,18 @@ export function mountCommandMap(container,options={}) {
     radar(prod==='radar'||prod==='briefing'||l.radar,r,now,items,notes);
     if((prod==='observations'||prod==='evidence'||prod==='reports'||l.reports)&&!['ground','aviation'].includes(prod)&&!isPower(prod)){
       const ob=state.observations||weather.observations;const hours=Math.max(1,Math.min(Number(state.reportHours)||48,Number(ob?.periodHours)||24));let rows=[];
-      if(ob){const cutoff=now-hours*3600000;rows=fresh(ob,now)?asFeatures(ob).filter(v=>{const t=Date.parse(v.observedAt||v.valid);return Number.isFinite(t)&&t>=cutoff&&t<=now;}):[];}
+      const current=ob?currentReportCollection(ob,now):['ok','current','partial'].includes(moduleState(board,'reports',now));
+      if(ob){const cutoff=now-hours*3600000;rows=current?asFeatures(ob).filter(v=>{const t=Date.parse(v.observedAt||v.valid);return Number.isFinite(t)&&t>=cutoff&&t<=now;}):[];}
       else rows=currentReports(board,hours,now);
-      points=rows.map(reportPoint).filter(Boolean);
-      const cats=new Set(points.filter(v=>state.observation==='all'||v.cat===state.observation).map(v=>v.cat));
+      points=rows.map(reportPoint).filter(p=>p&&(state.observation==='all'||p.cat===state.observation)&&(state.source==='all'||p.source===state.source));
+      const cats=new Set(points.map(v=>v.cat));
       for(const cat of cats)items.push(key(POINT_LABELS[cat],POINT_COLORS[cat],cat));
-      if(prod==='observations'||prod==='evidence'||prod==='reports')notes.push(points.length+' located, preliminary observations in the preceding '+hours+' hours.'+(ob?.unlocated?.length?' '+ob.unlocated.length+' reports have no qualified coordinates.':''));
+      if(prod==='observations'||prod==='evidence'||prod==='reports'){
+        const withoutLocation=(ob?.unlocated||[]).filter(v=>(state.observation==='all'||v.category===state.observation)&&(state.source==='all'||v.sourceType===state.source)&&Date.parse(v.observedAt||v.valid)>=now-hours*3600000&&Date.parse(v.observedAt||v.valid)<=now).length;
+        notes.push(current?points.length+' mapped observations in the past '+hours+' hours.'+(withoutLocation?' '+withoutLocation+' additional records have location text only.':'')+(ob?.status==='partial'?' Partial bulletin coverage.':''):'Current storm-report data unavailable.');
+      }
     }
-    points=points.filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lon));drawPoints();
+    points=points.filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lon));drawPoints();browser?.refresh(points);
     if(isPower(prod)){
       powerLayers={items,notes};
       writePowerLegend();
@@ -546,7 +616,9 @@ export function mountCommandMap(container,options={}) {
     drawCounties();setPower(isPower(prod),state.power||board?.impacts?.power);
   }
   function update(fields={}) {
-    if(dead)return;const productChanged=fields.product!==undefined&&fields.product!==state.product;const {layers,...rest}=fields;Object.assign(state,rest);
+    if(dead)return;const productChanged=fields.product!==undefined&&fields.product!==state.product;
+    if(productChanged||['source','observation','groundSource','reportHours'].some(k=>fields[k]!==undefined&&fields[k]!==state[k]))browser?.close();
+    const {layers,...rest}=fields;Object.assign(state,rest);
     if(layers)Object.assign(state.layers,layers);
     if(state.product!=='radar'&&state.product!=='briefing')state.briefingFocus=null;
     if(productChanged){selectionEpoch++;selectedLayer.clearLayers();map.closePopup();}
@@ -557,6 +629,12 @@ export function mountCommandMap(container,options={}) {
     if(isPower(state.product)&&(typeof input==='string'||input.fips)&&powerLayer)return powerLayer.focus(typeof input==='string'?input:input.fips,{popup:true});
     if(typeof input==='string')input={id:input};
     const poi=pointIndex.get(input.id)||points.find(p=>p.id===input.id);
+    const reading=poi||(['LSR','PNS'].includes(input.sourceType)?reportPoint(input):null);
+    if(browser&&reading){
+      selectedLayer.clearLayers();selectionEpoch++;
+      map.setView(nearPoint(reading),Math.max(map.getZoom(),7.25),{animate:false});
+      inspect([reading],reading,null);return true;
+    }
     const alert=state.board&&input.id&&!poi?currentAlerts(state.board,nowValue(options.now)).find(a=>a.id===input.id):null;
     const record=poi||(alert?{...alert,...input}:input),lat=record.latitude??record.lat,lon=record.longitude??record.lon;
     const geo=record.geometry;
@@ -594,11 +672,11 @@ export function mountCommandMap(container,options={}) {
     options.onViewChange?.({center:map.getCenter(),zoom:map.getZoom(),bounds:map.getBounds()});
   }
   map.on('autopanstart',()=>{autopanning=true;clearTimeout(pointTimer);});
-  map.on('popupopen',()=>clearTimeout(pointTimer));
+  map.on('popupopen',()=>{clearTimeout(pointTimer);browser?.close();});
   map.on('moveend zoomend',viewChanged);
   const resize=typeof ResizeObserver!=='undefined'?new ResizeObserver(()=>{if(!dead)map.invalidateSize({pan:false,debounceMoveend:true});}):null;resize?.observe(container);
   return {map,update,region,focus,fitBriefing,setBasemap:base.setStyle,focusOutage,zoomBy:n=>map.setZoom(map.getZoom()+Number(n||0)),invalidateSize:()=>map.invalidateSize({pan:false}),
     get legend(){return lastLegend;},get radar(){return radarInfo;},get impactOverlay(){return powerLayer;},
-    destroy(){dead=true;selectionEpoch++;clearTimeout(pointTimer);resize?.disconnect();map.off('moveend zoomend',viewChanged);powerLayer?.destroy();base.destroy();map.remove();}
+    destroy(){dead=true;selectionEpoch++;clearTimeout(pointTimer);browser?.close();resize?.disconnect();map.off('moveend zoomend',viewChanged);powerLayer?.destroy();base.destroy();map.remove();}
   };
 }

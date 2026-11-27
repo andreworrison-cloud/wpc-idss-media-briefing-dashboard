@@ -3,7 +3,8 @@ import {existsSync,readFileSync} from 'node:fs';
 import test from 'node:test';
 const root=existsSync(new URL('./geographic-base.js',import.meta.url))?new URL('./',import.meta.url):new URL('../assets/',import.meta.url);
 const {geometryNear,MAP_REGIONS,BASEMAP_CHOICES}=await import(new URL('geographic-base.js',root));
-const {reportPoint}=await import(new URL('map-points.js',root));
+const {reportPoint,pointCounts,pointCountLabel,pointKey,observationsOnMap}=await import(new URL('map-points.js',root));
+const {matchingPoints,newestFirst}=await import(new URL('point-browser.js',root));
 
 test('an Aleutian polygon and interior ring remain local across the date line',()=>{
   const input={type:'Polygon',coordinates:[
@@ -35,6 +36,43 @@ test('reports retain explicit zero and UTC measurement time in the first hover l
   assert.match(point.lines.slice(0,3).join(' '),/Public Information Statement · FWD/);
   assert.ok(point.lines.includes('24 h accumulation'));assert.equal(reportPoint({...row,latitude:null}),null);
   assert.equal(reportPoint({...row,trace:true,value:null}).value,'Trace');
+  assert.equal(reportPoint({...row,url:null,source_url:row.url}).url,null);
+});
+
+test('a cluster opens every source entry once even when a later record supplies its map symbol',()=>{
+  const doc={createElement:()=>({dataset:{},style:{setProperty(){}},setAttribute(){},append(){},addEventListener(){}})};
+  let marker;
+  const L={latLng:(lat,lng)=>({lat,lng}),divIcon:icon=>icon,marker:()=>{
+    const handlers={};const el=doc.createElement();
+    marker={addTo(){return this;},bindTooltip(){},getElement:()=>el,closeTooltip(){},
+      on(event,handler){handlers[event]=handler;},fire:event=>handlers[event]()};
+    return marker;
+  }};
+  const map={getBounds:()=>({pad:()=>({contains:()=>true})}),getZoom:()=>6,getSize:()=>({x:800}),
+    getCenter:()=>({lng:-77}),latLngToContainerPoint:()=>({x:1,y:1,distanceTo:()=>0})};
+  const base={lat:35,lon:-77,lines:[],place:'Example',title:'Observation'};
+  const rows=[{...base,source:'LSR',id:'1',record:{eligibleForBrief:false}},
+    {...base,source:'PNS',id:'1',record:{eligibleForBrief:true}},{...base,source:'NWPS',id:'3'}];
+  let opened;
+  observationsOnMap(L,map,null,rows,{doc,onInspect:(records,representative)=>{opened={records,representative};}});
+  marker.fire('click');
+  assert.equal(opened.representative,rows[1]);
+  assert.deepEqual(opened.records,rows);
+  assert.equal(new Set(opened.records.map(pointKey)).size,3);
+  assert.equal(marker.getElement().dataset.pointCount,'3');
+  assert.deepEqual([...pointCounts(rows)].map(([s,n])=>pointCountLabel(s,n)),['1 local storm report','1 PNS observation','1 river gauge']);
+  assert.equal(pointCountLabel('NWPS',4),'4 river gauges');
+});
+
+test('group search combines source, location, station, county, impact and hazard while preserving UTC order',()=>{
+  const base={id:'g1',place:'Stumpy Point, NC',source:'NWPS',stationId:'STUN7',measure:'major flooding',observedAt:'2026-11-26T18:00:00Z'};
+  const reports=[{...base,id:'r1',source:'LSR',office:'MHX',county:'Dare',impacts:'road closure',issuedAt:'2026-11-26T18:35:00Z'},
+    {...base,id:'r2',source:'LSR',office:'MHX',county:'Dare',impacts:'road closure',issuedAt:'2026-11-26T19:00:00Z'},
+    base,{...base,id:'old',observedAt:null,issuedAt:'2026-11-26T17:30:00Z'}];
+  assert.deepEqual(matchingPoints(newestFirst(reports),'LSR',' daRE  closure mhx ').map(p=>p.id),['r2','r1']);
+  assert.deepEqual(matchingPoints(reports,'NWPS','stun7 point').map(p=>p.id),['g1','old']);
+  assert.deepEqual(matchingPoints(reports,'PNS','Point'),[]);
+  assert.equal(newestFirst(reports).at(-1).id,'old');
 });
 
 test('the briefing map accepts current native zones and mixed collections while excluding expired shapes',async()=>{

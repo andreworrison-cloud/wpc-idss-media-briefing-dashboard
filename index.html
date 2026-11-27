@@ -9,13 +9,14 @@
   <title>WPC IDSS and Media Briefing Dashboard</title>
   <link rel="icon" href="./assets/mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./assets/leaflet/leaflet.css">
-  <link rel="stylesheet" href="./assets/command-map.css">
+  <link rel="stylesheet" href="./assets/command-map.css?v=20261127">
   <link rel="stylesheet" href="./assets/outage-layer.css">
   <link rel="stylesheet" href="./assets/briefing.css">
   <link rel="stylesheet" href="./assets/focus-desk.css">
   <link rel="stylesheet" href="./assets/overview.css?v=20261126">
+  <link rel="stylesheet" href="./assets/point-browser.css">
   <script defer src="./assets/leaflet/leaflet.js"></script>
-  <script type="module" src="./assets/briefing.js?v=20261126"></script>
+  <script type="module" src="./assets/briefing.js?v=20261127"></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to data</a>
@@ -77,6 +78,18 @@
         <button type="button" data-product="ero1" aria-pressed="false"><svg><use href="#i-rain"/></svg>Excessive rain</button>
         <button type="button" data-product="outlook" aria-pressed="false"><svg><use href="#i-outlook"/></svg>Days 3–7</button>
       </div>
+      <div id="map-point-controls" class="map-point-controls" hidden>
+        <div id="weather-point-sources" role="group" aria-label="Storm report source" hidden>
+          <button type="button" data-map-source="" aria-pressed="true">All reports</button><button type="button" data-map-source="LSR" aria-pressed="false" title="Local Storm Reports">LSR</button><button type="button" data-map-source="PNS" aria-pressed="false" title="Public Information Statements">PNS</button>
+        </div>
+        <div id="ground-point-sources" role="group" aria-label="Ground impact source" hidden>
+          <button type="button" data-ground-source="all" aria-pressed="true">All</button><button type="button" data-ground-source="NWPS" aria-pressed="false">River gauges</button><button type="button" data-ground-source="LSR" aria-pressed="false">Impact reports</button>
+        </div>
+        <label id="observation-control" hidden>Hazard<select id="map-observation"><option value="all">All hazards</option><option value="snow">Snow / sleet</option><option value="ice">Ice accretion</option><option value="rain">Rain</option><option value="wind">Wind</option><option value="effect">Weather impacts</option><option value="hail">Hail</option><option value="cold">Cold</option><option value="heat">Heat</option></select></label>
+        <label id="map-report-window" hidden>Past<select id="map-report-hours"><option value="6">6 hours</option><option value="12">12 hours</option><option value="24">24 hours</option><option value="48" selected>48 hours</option></select></label>
+        <span class="point-count-guide">Number badges group nearby entries.</span>
+      </div>
+      <div class="map-workspace">
       <div class="map-frame"><div id="atlas" class="geo-map" aria-label="Interactive weather and impact map"></div><div class="map-zoom" role="group" aria-label="Map zoom"><button type="button" id="zoom-in" aria-label="Zoom in">+</button><button type="button" id="zoom-out" aria-label="Zoom out">−</button></div>
         <details class="map-settings" id="map-settings"><summary><svg aria-hidden="true"><use href="#i-layers"/></svg>Layers<span class="layer-count" id="layer-count" aria-label="Active map layers"></span></summary>
           <div class="map-settings-body">
@@ -99,9 +112,10 @@
           </div>
         </details>
       </div>
+      <section id="nearby-panel" class="nearby-panel" aria-labelledby="nearby-title" hidden></section>
+      </div>
       <label id="power-control" class="subcontrol" hidden>Outage geography<select id="map-power-level"><option value="auto">Auto · states to counties</option><option value="state">States</option><option value="county">Counties</option></select></label>
       <label id="winter-control" class="subcontrol" hidden>Winter product<select id="winter-layer"></select></label>
-      <label id="observation-control" class="subcontrol" hidden>Report type<select id="map-observation"><option value="all">All reports</option><option value="snow">Snow</option><option value="ice">Ice accretion</option><option value="rain">Rain</option><option value="wind">Wind</option><option value="effect">Weather impacts</option><option value="hail">Hail</option><option value="cold">Cold</option><option value="heat">Heat</option></select></label>
       <div class="map-reading"><span id="map-focus-key" hidden></span><span id="map-phase" role="status"></span></div>
       <div id="radar-controls" class="subcontrol" hidden><label for="radar-frame">Radar time</label><select id="radar-frame"></select><button type="button" id="radar-loop" aria-pressed="false">Play loop</button></div>
       <div id="map-legend" class="legend" aria-label="Map legend"></div><p id="map-foot" class="map-foot">Loading geographic layers…</p>

@@ -30,7 +30,7 @@ export function reportAmount(row) {
 export function amountDetail(row) {
   return [reportAmount(row), row.qualifier && !/^(reported|trace)$/i.test(row.qualifier)?row.qualifier.toLowerCase():null, reportPeriod(row)].filter(Boolean).join(' · ');
 }
-function collectionState(observations, now) {
+export function collectionState(observations, now) {
   if(!observations || !classOK(observations.status)) return 'unavailable';
   const t=Date.parse(observations.asOf||observations.checkedAt);
   if(!Number.isFinite(t) || now-t>75*60000 || t-now>5*60000) return 'stale';

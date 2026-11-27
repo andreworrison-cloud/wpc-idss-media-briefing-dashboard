@@ -35,6 +35,7 @@ ASSETS = (
     'spectral-license.txt', 'spectral-semibold.woff2', 'impact-strip.js', 'briefing-light-relief.webp',
     'active-alert-shapes.js', 'browser-recovery.js', 'recovery-observations.js', 'recovery-hazards.js',
     'recovery-population.js', 'report-evidence.js', 'overview.js', 'overview.css', 'forecast-previews.js',
+    'point-browser.js', 'point-browser.css',
 )
 
 GENERATED_CENTER_INDEX = 'recovery-centers.bin.gz'
