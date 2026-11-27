@@ -1,9 +1,9 @@
 import {readRelease,recoverRelease} from './release.js';
-import {mountOverview} from './overview.js';
+import {mountOverview} from './overview.js?v=20261127-air';
 import {mountImpactStrip} from './impact-strip.js';
 import {mountFocusDesk} from './focus-desk.js';
 import {currentRadar} from './browser-radar.js';
-import {renderImpacts,selectedExposure,selectExposureFocus,powerLevel,setPowerLevel} from './impacts.js';
+import {renderImpacts,selectedExposure,selectExposureFocus,powerLevel,setPowerLevel} from './impacts.js?v=20261127-air';
 import {exposureRecords,currentGroundReports,impactNames} from './impact-logic.js';
 import {inkFor} from './hazard-palette.js';
 import {officeCodes} from './offices.js';
@@ -35,6 +35,24 @@ let groundSource='all';
 let scope=blankScope(), briefText='', catalogPage=0, catalogRows=[], legend=null, loop=null, frame=null, frameStamp=null;
 const notices=new Map();
 const views = new Set([...document.querySelectorAll('[data-view]')].map(el=>el.dataset.view));
+const flightVisual=$('flightaware-visual');
+const flightScreen=flightVisual.querySelector('.flightaware-screen');
+// The publisher map draws at 640 x 400. Fit the full map, including its controls, on phones.
+function sizeFlightMap(){
+  const width=flightScreen.getBoundingClientRect().width;
+  if(width>0)flightScreen.style.setProperty('--flight-map-scale',String(width/640));
+}
+if(typeof ResizeObserver==='function')new ResizeObserver(sizeFlightMap).observe(flightScreen);
+else window.addEventListener('resize',sizeFlightMap);
+function placeFlightMap(){
+  const target=!$('board-view').hidden?$('overview-flight-map'):
+    !$('impacts-view').hidden&&currentImpact==='aviation'?$('detail-flight-map'):null;
+  if(!target||flightVisual.parentElement===target)return;
+  // Reuse the frame. Routine board refreshes must not reset the selected airport.
+  if(target.moveBefore)target.moveBefore(flightVisual,null);
+  else target.append(flightVisual);
+  sizeFlightMap();
+}
 let visualOverview=null;
 let appearance=document.documentElement.dataset.theme==='light'?'light':'dark';
 function applyAppearance(theme,persist=false) {
@@ -94,6 +112,10 @@ function writeLegend(result) {
   if(product==='radar')href=obj?.source_url||obj?.source_data_url||obj?.dashboard_url;
   const label=product==='radar'?(obj?.provider||'Radar source'):product==='mpd'?'WPC MetWatch':'Official product';
   $('map-foot').innerHTML=esc(data.note||'')+(publicURL(href)?' · '+source(href,label):'');
+  if(product==='aviation'){
+    const a=document.createElement('a');a.href='#aviation';a.textContent='FlightAware airport delay map';
+    $('map-foot').append(' · ',a);
+  }
 }
 function mapNotice(update) {
   const key=update?.layer;if(!key)return;
@@ -151,7 +173,7 @@ function showMap(name, scroll=false) {
   if(name!==product){stopLoop();$('map-detail').hidden=true;for(const key of [...notices.keys()])if(key!=='basemap')notices.delete(key);$('map-notice').textContent=[...notices.values()].join(' ');}
   if(scroll)navigate('board');
   product=name;$('product').value=name;updateMap();
-  const titles={radar:'U.S. hazard map',winter:'Winter weather',mpd:'Mesoscale Precipitation Discussions',alerts:'NWS watches, warnings and advisories',observations:'Measured weather reports',outlook:'Days 3–7 hazards',power:'Utility outages',aviation:'Air travel',ground:'Ground impacts',exposure:'Resident exposure'};
+  const titles={radar:'U.S. hazard map',winter:'Winter weather',mpd:'Mesoscale Precipitation Discussions',alerts:'NWS watches, warnings and advisories',observations:'Measured weather reports',outlook:'Days 3–7 hazards',power:'Utility outages',aviation:'FAA airport notices',ground:'Ground impacts',exposure:'Resident exposure'};
   $('map-heading').textContent=titles[name]||('Day '+name.slice(3)+' excessive rainfall');
   if(scroll)requestAnimationFrame(()=>{$('map-stage').scrollIntoView({block:'start'});});
 }
@@ -162,8 +184,13 @@ function showImpact(id) {
   for(const b of document.querySelectorAll('[data-impact-layer]')){
     b.setAttribute('aria-pressed',String(b.dataset.impactLayer===id));b.setAttribute('aria-controls',b.dataset.impactLayer+'-panel');
     b.setAttribute('aria-label','Show '+b.querySelector('.metric-label').textContent+' details');
-    b.onclick=()=>{showImpact(b.dataset.impactLayer);};
+    b.onclick=()=>{
+      const next=b.dataset.impactLayer;
+      if(next==='aviation')navigate('aviation');
+      else {showImpact(next);if(location.hash==='#aviation')navigate('impacts');}
+    };
   }
+  placeFlightMap();
 }
 function focusReport(row) {
   const info=reportPresentation(row),located=Number.isFinite(row.latitude)&&Number.isFinite(row.longitude);
@@ -177,7 +204,7 @@ const kpiStrip=mountImpactStrip($('impact-strip'),(id,choice)=>{
     selectExposureFocus(board,choice);
     renderImpactDetails();
   }
-  showImpact(id);navigate('impacts');
+  showImpact(id);navigate(id==='aviation'?'aviation':'impacts');
 });
 const focusDesk=mountFocusDesk({
   onChange() { visualOverview?.updateFocus(focusDesk.getSelection());kpiStrip.update(board,focusDesk.getSelection());showMap('radar');map?.fitBriefing(); },
@@ -322,8 +349,10 @@ $('brief-form').onsubmit=e=>{e.preventDefault();if(!board)return;try{
 $('copy').onclick=async()=>{if(!board)return;renderBrief();try{await navigator.clipboard.writeText(briefText);$('copy-note').textContent='Brief and source links copied.';}catch{const range=document.createRange();range.selectNodeContents($('brief-output'));const s=getSelection();s.removeAllRanges();s.addRange(range);$('copy-note').textContent='Brief selected. Use your browser’s Copy command.';}};
 $('print').onclick=()=>{if(board){renderBrief();window.print();}};
 function route() {
-  const hash=location.hash.slice(1), view=views.has(hash)?hash:hash==='issued'?'products':hash==='main'?document.querySelector('[data-view]:not([hidden])')?.dataset.view||'board':'board';
+  const hash=location.hash.slice(1), view=views.has(hash)?hash:hash==='aviation'?'impacts':hash==='issued'?'products':hash==='main'?document.querySelector('[data-view]:not([hidden])')?.dataset.view||'board':'board';
   for(const section of document.querySelectorAll('[data-view]'))section.hidden=section.dataset.view!==view;
+  if(hash==='aviation')showImpact('aviation');
+  else placeFlightMap();
   for(const a of document.querySelectorAll('[data-nav]')){
     if(a.dataset.nav===view)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
   }
@@ -333,7 +362,7 @@ function route() {
   if(hash!=='main')window.scrollTo({top:0});
 }
 function navigate(view) {
-  if(!views.has(view))return;
+  if(!views.has(view)&&view!=='aviation')return;
   if(location.hash!=='#'+view)history.pushState(null,'','#'+view);
   route();
 }
@@ -396,7 +425,7 @@ async function refresh(){
   catch{if(board){focusDesk.update(board);kpiStrip.update(board,focusDesk.getSelection());visualOverview?.update(board,focusDesk.getSelection());updateMap();$('sync-status').textContent='Refresh unavailable · Last collection '+time(board.revision);}else{focusDesk.update(null);kpiStrip.update(null,null);visualOverview?.update(null,null);$('impact-strip').setAttribute('aria-busy','false');$('sync-status').textContent='Current briefing collection unavailable';reports.update(null);for(const id of ['priorities','ground-panel','exposure-panel','weather-source-rows','impact-source-rows','sources-table'])$(id).textContent='Current collection unavailable.';
     $('brief-output').textContent='A current collection is required to generate a source-linked briefing.';
     $('power-panel').innerHTML='<p>Current utility figures are unavailable. '+source('https://poweroutage.us/','PowerOutage.us map')+' · '+source('https://poweroutmap.com/','Power Out Map')+'</p>';
-    $('aviation-panel').innerHTML='<p>Current FAA notices are unavailable. '+source('https://nasstatus.faa.gov/','FAA status')+' · '+source('https://www.flightaware.com/live/cancelled/today/US','U.S. flight delays and cancellations on FlightAware')+'</p>';if(!mapModuleFailed)$('map-foot').textContent='Current weather layers unavailable.';}}
+    $('aviation-panel').innerHTML='<p>Current FAA notices are unavailable. '+source('https://nasstatus.faa.gov/','FAA status')+'</p>';if(!mapModuleFailed)$('map-foot').textContent='Current weather layers unavailable.';}}
   finally{loading=false;$('refresh').disabled=false;}
 }
 async function loadShift(){try{handoff=await readRelease('handoff');if(board)renderMessages();}catch{}}

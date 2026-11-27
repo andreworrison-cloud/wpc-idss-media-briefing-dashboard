@@ -13,10 +13,10 @@
   <link rel="stylesheet" href="./assets/outage-layer.css">
   <link rel="stylesheet" href="./assets/briefing.css">
   <link rel="stylesheet" href="./assets/focus-desk.css">
-  <link rel="stylesheet" href="./assets/overview.css?v=20261126">
+  <link rel="stylesheet" href="./assets/overview.css?v=20261127-air">
   <link rel="stylesheet" href="./assets/point-browser.css">
   <script defer src="./assets/leaflet/leaflet.js"></script>
-  <script type="module" src="./assets/briefing.js?v=20261127"></script>
+  <script type="module" src="./assets/briefing.js?v=20261127-air"></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to data</a>
@@ -148,7 +148,22 @@
         <div id="overview-power" class="monitor-body"><p class="monitor-empty">Loading utility reports…</p></div>
       </section>
       <section class="monitor-card air-monitor" aria-labelledby="air-heading">
-        <header class="monitor-head"><div><svg aria-hidden="true"><use href="#i-plane"/></svg><h2 id="air-heading">Airport disruptions</h2></div><button type="button" data-map-product="aviation">Airport map</button></header>
+        <header class="monitor-head"><div><svg aria-hidden="true"><use href="#i-plane"/></svg><h2 id="air-heading">Airport disruptions</h2></div><button type="button" data-map-product="aviation">FAA notices map</button></header>
+        <div id="overview-flight-map">
+          <figure id="flightaware-visual" class="flightaware-visual" aria-labelledby="flightaware-title">
+            <div class="flightaware-head"><h3 id="flightaware-title">FlightAware airport delays</h3><a class="flightaware-enlarge" href="#aviation" aria-label="Enlarge FlightAware airport delay map">Enlarge map</a></div>
+            <div class="flightaware-screen">
+              <iframe id="flightaware-frame" title="FlightAware U.S. airport delays and weather radar" src="https://embed.flightaware.com/commercial/integrated/web/delay_map.rvt" width="640" height="400" scrolling="no" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+            </div>
+            <figcaption>
+              <div class="flightaware-links">
+                <a class="miserymap-link" href="https://www.flightaware.com/miserymap/" target="_blank" rel="noopener noreferrer"><strong>Open MiseryMap®</strong><span>Airport delays and cancellations</span></a>
+                <a href="https://www.flightaware.com/live/cancelled/today/US" target="_blank" rel="noopener noreferrer">Today’s U.S. totals</a>
+              </div>
+              <a class="flightaware-credit" href="https://www.flightaware.com/" target="_blank" rel="noopener noreferrer">Flight Tracker courtesy of FlightAware.com</a>
+            </figcaption>
+          </figure>
+        </div>
         <div id="overview-air" class="monitor-body"><p class="monitor-empty">Loading FAA notices…</p></div>
       </section>
   <section class="population-desk monitor-card" aria-labelledby="population-heading">
@@ -175,7 +190,7 @@
       <div class="impact-detail">
         <section data-impact-pane="exposure"><div class="subhead"><h3>Resident exposure</h3><button data-map-product="exposure" type="button">View on map ↗</button></div><div id="exposure-panel"></div></section>
         <section data-impact-pane="power" hidden><div class="subhead"><h3>Utility outages</h3><button data-map-product="power" type="button">View on map ↗</button></div><div id="power-panel"></div></section>
-        <section data-impact-pane="aviation" hidden><div class="subhead"><h3>Aviation disruption</h3><button data-map-product="aviation" type="button">View on map ↗</button></div><div id="aviation-panel"></div></section>
+        <section data-impact-pane="aviation" hidden><div class="subhead"><h3>Aviation disruption</h3><button data-map-product="aviation" type="button">FAA notices map</button></div><div id="detail-flight-map"></div><div id="aviation-panel"></div></section>
         <section data-impact-pane="ground" hidden><div class="subhead"><h3>Ground impacts and river observations</h3><button data-map-product="ground" type="button">View on map ↗</button></div><div id="ground-panel"></div></section>
       </div>
       <aside class="briefing-notes"><div class="subhead"><h3>For the next interview</h3><a href="#brief">Prepare brief ↗</a></div><div id="priorities"></div></aside>

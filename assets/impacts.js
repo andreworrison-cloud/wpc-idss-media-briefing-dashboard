@@ -84,7 +84,6 @@ function airPanel(a) {
   if(sorted.length>4)html+=extendedList('All '+sorted.length+' active notices',table(['Airport','FAA notice / cause','Reported delay'],sorted.map(row)));
   const planned=live?(a.scheduled_events||[]).filter(e=>Date.parse(e.start_utc)>Date.now()):[];
   if(planned.length)html+=extendedList('Upcoming issued notices ('+planned.length+')',table(['Airport','Notice','Starts UTC'],planned.map(e=>[esc(e.airport),esc(e.label),esc(when(e.start_utc))])));
-  html+=`<div class="flight-totals"><strong>U.S. flight delays &amp; cancellations today</strong>${url(a?.flight_counts?.url||links.flights,'View live FlightAware totals')}</div>`;
   const monthly=a?.monthly_context;
   if(monthly?.status==='historical')html+=extendedList('Historical U.S. domestic flight totals · '+monthly.period_label,table(['BTS reporting month','Delayed arrivals (15+ min)','Cancellations'],[[esc(monthly.period_label),countText(monthly.delayed_arrivals),countText(monthly.cancelled)]])+note(monthly.coverage.replace(/[. ]+$/,'')+'. '+countText(monthly.flight_operations)+' flight operations in the reporting month.')+sourceLine([url(monthly.source_url,'BTS monthly statistics')]));
   byId('aviation-panel').innerHTML=html+sourceLine([url(links.aviation,'FAA NAS Status')],a?.as_of);

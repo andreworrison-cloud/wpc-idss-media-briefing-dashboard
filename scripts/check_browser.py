@@ -120,6 +120,22 @@ def check(url):
         assert js("return document.querySelectorAll('#overview-ground .ground-figures>div').length===4 || document.querySelector('#overview-ground').textContent.includes('unavailable')")
         assert js("return [...document.querySelectorAll('#overview-ground .ground-report')].every(row=>row.querySelector('a[href^=https]'))"), 'Reported ground impacts link to their NWS bulletin'
         snap('overview-opening')
+        frame_url='https://embed.flightaware.com/commercial/integrated/web/delay_map.rvt'
+        wait("document.querySelector('#overview-flight-map iframe')?.src==="+json.dumps(frame_url),'FlightAware publisher map on Overview')
+        js("window.qaFlightFrame=document.querySelector('#flightaware-frame'); document.querySelector('.flightaware-enlarge').click()")
+        wait("location.hash==='#aviation' && !document.querySelector('[data-impact-pane=aviation]').hidden && document.querySelector('#detail-flight-map iframe')===qaFlightFrame", 'Enlarge opens the aviation map')
+        def flight_map_fits():
+            return js("""
+                const screen=document.querySelector('.flightaware-screen').getBoundingClientRect();
+                const frame=document.querySelector('#flightaware-frame').getBoundingClientRect();
+                return screen.width>0 && Math.abs(frame.width-screen.width)<2 && Math.abs(frame.height-screen.height)<2;
+            """)
+        wait("document.querySelector('#flightaware-frame').getBoundingClientRect().width>590",'Desktop aviation map opens at briefing size')
+        assert flight_map_fits(), 'The entire FlightAware map fits its container'
+        assert js("return document.querySelector('.miserymap-link').href==='https://www.flightaware.com/miserymap/' && document.querySelectorAll('#flightaware-frame').length===1"), 'Full MiseryMap and the single publisher map have distinct destinations'
+        snap('aviation-flightaware')
+        view('board')
+        wait("document.querySelector('#overview-flight-map iframe')===qaFlightFrame",'Overview retains the same FlightAware map')
         js("document.querySelector('.state-tile[data-code=VA]').click()")
         wait("document.querySelector('.state-readout').textContent.includes('Virginia')", 'Accessible state outage readout')
         js("document.querySelector('#overview-county-map').click()")
@@ -261,6 +277,9 @@ def check(url):
         js("document.querySelector('#weather-point-sources button').click()")
         select('map-report-hours','48')
         browse_group(phone=True)
+        js("location.hash='aviation'")
+        wait("!document.querySelector('[data-impact-pane=aviation]').hidden && document.querySelector('#detail-flight-map iframe')?.getBoundingClientRect().width<390", 'Aviation deep link on a phone')
+        assert flight_map_fits() and js("return document.documentElement.scrollWidth<=392"), 'Phone displays the entire airport map without horizontal scrolling'
         print('Verified map and briefing, source-scoped report groups, observations and pagination, quarter-step zoom, radar, winter, MPDs, outages, state brief and phone layout.')
     except Exception:
         if 'prefix' in locals():
